@@ -1,14 +1,16 @@
 """
-Lafla AI model boyutunu ve mimari kararlarını tek yerde doğrular.
+Lafla AI model boyutunu ve mimari kararlarını doğrular.
 
-Bu dosya gerçek eğitim kodundan bağımsızdır. Amaç, Colab veya üretim
-eğitim betiği başlamadan önce gizli varsayımları yakalamaktır: baş sayısı,
-GQA grupları, bağlam uzunluğu ve parametre bütçesi burada açıkça kontrol edilir.
+Bu dosya yalnızca modelin eğitimden önce kırılmayacak ve 2B parametre sınırını
+aşmayacak şekilde tanımlanmasını sağlar.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+
+MAXIMUM_MODEL_PARAMETERS = 2_000_000_000
 
 
 @dataclass(frozen=True)
@@ -38,16 +40,14 @@ class TransformerConfig:
             raise ValueError("vocabulary_size must be at least 32000")
         if self.feed_forward_multiple < 2.0:
             raise ValueError("feed_forward_multiple is too small for SwiGLU-style blocks")
+        if self.estimated_parameters(skip_validate=True) > MAXIMUM_MODEL_PARAMETERS:
+            raise ValueError("model exceeds 2B parameter limit")
 
-    def estimated_parameters(self) -> int:
-        """Yaklaşık parametre sayısını döndürür.
+    def estimated_parameters(self, *, skip_validate: bool = False) -> int:
+        """Yaklaşık parametre sayısını döndürür."""
 
-        Bu sayı kesin checkpoint boyutu değildir; embedding, attention ve MLP
-        katmanlarının kaba toplamıdır. Planlama ve Colab bellek hesabı için
-        yeterince açıklayıcıdır.
-        """
-
-        self.validate()
+        if not skip_validate:
+            self.validate()
         embeddings = self.vocabulary_size * self.embedding_size
         attention = self.layers * 4 * self.embedding_size * self.embedding_size
         feed_forward_width = int(self.embedding_size * self.feed_forward_multiple)
@@ -58,7 +58,7 @@ class TransformerConfig:
 
 
 def default_lafla_1b_config() -> TransformerConfig:
-    """Tek GPU/Colab odaklı, büyütülebilir 1B sınıfı başlangıç ayarı."""
+    """2B sınırını aşmadan büyütülebilir 1B sınıfı başlangıç ayarı."""
 
     return TransformerConfig(
         attention_heads=16,

@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from lafla_ai.sunum.konuşma_kalitesi import load_conversation_quality, render_conversation_policy
+
 
 @dataclass(frozen=True)
 class LaflaIdentity:
@@ -37,6 +39,7 @@ class LaflaChatSession:
     """Lafla AI konuşma oturumunu sistem yönergesiyle birlikte tutar."""
 
     identity_config: Path
+    quality_config: Path | None = None
     turns: list[ConversationTurn] = field(default_factory=list)
 
     def system_prompt(self) -> str:
@@ -44,13 +47,16 @@ class LaflaChatSession:
 
         identity = load_identity(self.identity_config)
         rules = "\n".join(f"- {rule}" for rule in identity.behavior_rules)
-        return (
+        prompt = (
             f"Sen {identity.name} adlı yardımcı modelsin.\n"
             f"Ürün: {identity.product}\n"
             f"Varsayılan dil: {identity.default_language}\n"
             f"Tanım: {identity.short_description}\n"
             f"Kurallar:\n{rules}"
         )
+        if self.quality_config is None:
+            return prompt
+        return f"{prompt}\n\n{render_conversation_policy(load_conversation_quality(self.quality_config))}"
 
     def add_user_message(self, content: str) -> None:
         """Kullanıcı mesajını boş olmayan içerikle oturuma ekler."""

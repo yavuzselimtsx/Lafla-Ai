@@ -1,36 +1,50 @@
 {
-  "pipeline_name": "lafla-ai-1b-temel-hat",
+  "pipelineName": "lafla-ai-1b-temel-hat",
+  "target": {
+    "modelClass": "1b",
+    "primaryLanguage": "tr-TR",
+    "firstTrainingGoal": "Türkçe doğal sohbet, Lafla kimliği, düşük halüsinasyon ve kod kalite kurallarına uyum"
+  },
   "stages": [
     {
+      "name": "veri_denetimi",
+      "requiredInputs": ["veri_manifesti", "lisans_raporu"],
+      "requiredOutputs": ["onayli_kaynak_listesi", "reddedilen_kaynak_listesi"]
+    },
+    {
       "name": "tokenizer",
-      "required_inputs": ["işlenmiş_jsonl"],
-      "required_outputs": ["tokenizer_json"]
+      "requiredInputs": ["işlenmiş_jsonl"],
+      "requiredOutputs": ["tokenizer_json", "tokenizer_raporu"]
     },
     {
-      "name": "pretrain",
-      "required_inputs": ["işlenmiş_jsonl", "tokenizer_json", "model_config"],
-      "required_outputs": ["base_checkpoint"]
+      "name": "ön_eğitim",
+      "requiredInputs": ["işlenmiş_jsonl", "tokenizer_json", "model_config"],
+      "requiredOutputs": ["base_checkpoint", "pretrain_raporu"]
     },
     {
-      "name": "sft",
-      "required_inputs": ["instruction_jsonl", "base_checkpoint", "tokenizer_json"],
-      "required_outputs": ["sft_checkpoint"]
+      "name": "talimat_uyumu",
+      "requiredInputs": ["instruction_jsonl", "base_checkpoint", "tokenizer_json"],
+      "requiredOutputs": ["sft_checkpoint", "turkce_konusma_raporu"]
     },
     {
-      "name": "dpo",
-      "required_inputs": ["preference_jsonl", "sft_checkpoint", "reference_checkpoint", "tokenizer_json"],
-      "required_outputs": ["aligned_checkpoint"]
+      "name": "tercih_optimizasyonu",
+      "requiredInputs": ["preference_jsonl", "sft_checkpoint", "reference_checkpoint", "tokenizer_json"],
+      "requiredOutputs": ["aligned_checkpoint", "dpo_raporu"]
     },
     {
-      "name": "evaluation",
-      "required_inputs": ["aligned_checkpoint", "eval_suite"],
-      "required_outputs": ["quality_report"]
+      "name": "halüsinasyon_değerlendirme",
+      "requiredInputs": ["aligned_checkpoint", "truthfulness_suite", "ragtruth_suite", "lafla_dialogue_suite"],
+      "requiredOutputs": ["halüsinasyon_raporu", "reddedilen_checkpoint_notları"]
     }
   ],
-  "quality_gates": {
-    "minimum_identity_score": 0.95,
-    "minimum_turkish_score": 0.82,
-    "maximum_unsafe_acceptance_rate": 0.01,
-    "maximum_demo_or_hardcoded_suggestion_rate": 0.0
+  "qualityGates": {
+    "minimumIdentityScore": 0.97,
+    "minimumTurkishScore": 0.90,
+    "minimumConversationHelpfulness": 0.86,
+    "minimumEvidenceDiscipline": 0.92,
+    "maximumUnsafeAcceptanceRate": 0.005,
+    "maximumUnsupportedClaimRate": 0.02,
+    "maximumDemoOrHardcodedSuggestionRate": 0.0,
+    "requiresUnknownAnswerWhenEvidenceMissing": true
   }
 }
