@@ -1,0 +1,43 @@
+{
+  "datasetVersion": "lafla-2026-06-01",
+  "targetTokens": 2000000000,
+  "sources": [
+    {
+      "sourceId": "fineweb2_hq_turkish",
+      "loader": "epfml/FineWeb2-HQ",
+      "subset": "tur_Latn",
+      "language": "tr",
+      "license": "ODC-By-1.0",
+      "weight": 0.72,
+      "usage": "pretraining"
+    },
+    {
+      "sourceId": "aya_dataset_turkish",
+      "loader": "CohereLabs/aya_dataset",
+      "subset": "default",
+      "language": "tr",
+      "license": "Apache-2.0",
+      "weight": 0.08,
+      "usage": "instruction"
+    },
+    {
+      "sourceId": "turkish_curated_local",
+      "loader": "local_jsonl",
+      "subset": "turkish-curated",
+      "language": "tr",
+      "license": "only-approved-local-licenses",
+      "weight": 0.20,
+      "usage": "pretraining"
+    }
+  ],
+  "filters": {
+    "languageId": true,
+    "dedup": true,
+    "pii": true,
+    "toxicity": true,
+    "length": {
+      "minChars": 120,
+      "maxChars": 12000
+    }
+  }
+}

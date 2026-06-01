@@ -1,0 +1,36 @@
+{
+  "pipeline_name": "lafla-ai-1b-temel-hat",
+  "stages": [
+    {
+      "name": "tokenizer",
+      "required_inputs": ["işlenmiş_jsonl"],
+      "required_outputs": ["tokenizer_json"]
+    },
+    {
+      "name": "pretrain",
+      "required_inputs": ["işlenmiş_jsonl", "tokenizer_json", "model_config"],
+      "required_outputs": ["base_checkpoint"]
+    },
+    {
+      "name": "sft",
+      "required_inputs": ["instruction_jsonl", "base_checkpoint", "tokenizer_json"],
+      "required_outputs": ["sft_checkpoint"]
+    },
+    {
+      "name": "dpo",
+      "required_inputs": ["preference_jsonl", "sft_checkpoint", "reference_checkpoint", "tokenizer_json"],
+      "required_outputs": ["aligned_checkpoint"]
+    },
+    {
+      "name": "evaluation",
+      "required_inputs": ["aligned_checkpoint", "eval_suite"],
+      "required_outputs": ["quality_report"]
+    }
+  ],
+  "quality_gates": {
+    "minimum_identity_score": 0.95,
+    "minimum_turkish_score": 0.82,
+    "maximum_unsafe_acceptance_rate": 0.01,
+    "maximum_demo_or_hardcoded_suggestion_rate": 0.0
+  }
+}
