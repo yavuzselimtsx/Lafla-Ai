@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from lafla_ai_core.tokenizer.quality import validate_clean_text
+
 
 DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
     {
@@ -138,7 +140,6 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
     },
 )
 
-MOJIBAKE_MARKERS = ("\u00c3", "\u00c2", "\ufffd")
 TURKISH_LETTERS = set("abcdefghijklmnopqrstuvwxyz" + "\u00e7\u011f\u0131\u00f6\u015f\u00fc")
 TURKISH_COMMON = (" ve ", " bir ", " icin ", " i\u00e7in ", " olan ", " olarak ", " ile ", " daha ")
 ENGLISH_COMMON = (" the ", " and ", " for ", " with ", " from ", " this ", " that ", " model ")
@@ -323,7 +324,9 @@ def clean_text(raw: str, max_record_chars: int, spec: Mapping[str, Any]) -> str:
         return ""
     if len(text) > max_record_chars:
         text = text[:max_record_chars].rsplit(" ", 1)[0].strip()
-    if any(marker in text for marker in MOJIBAKE_MARKERS):
+    try:
+        text = validate_clean_text(text, f"prepare_real_data:{spec.get('source_id', 'unknown')}")
+    except ValueError:
         return ""
     if not passes_domain_signal(text, spec):
         return ""
