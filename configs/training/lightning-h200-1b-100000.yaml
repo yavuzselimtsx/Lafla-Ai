@@ -1,0 +1,19 @@
+# Lightning H200 training defaults for LaflaGPT 1B.
+training:
+  max_steps: 100000
+  sequence_length: 1024
+  micro_batch_size: 16
+  gradient_accumulation_steps: 4
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.0002
+  min_learning_rate: 0.00002
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 2000
+  save_every: 100
+  keep_last_checkpoints: 3
+  checkpoint_min_free_gb: 30.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: false

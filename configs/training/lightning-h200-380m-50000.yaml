@@ -1,0 +1,20 @@
+# Lightning H200 training defaults for LaflaGPT 380M.
+# 96 x 1024 tokens keeps H200 fed while staying inside 141GB HBM for 380M.
+training:
+  max_steps: 50000
+  sequence_length: 1024
+  micro_batch_size: 96
+  gradient_accumulation_steps: 1
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.00025
+  min_learning_rate: 0.000025
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 1500
+  save_every: 250
+  keep_last_checkpoints: 4
+  checkpoint_min_free_gb: 30.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: false

@@ -1,0 +1,30 @@
+{
+  "allowed_for_post_training": true,
+  "allowed_for_pretraining": false,
+  "data_kind": "synthetic_safety_sft_seed",
+  "dataset_version": "lafla-100m-synthetic-safety-jailbreak-seed-2026-06",
+  "fields": [
+    "system",
+    "user",
+    "thinking",
+    "assistant"
+  ],
+  "format": "jsonl",
+  "identity_policy": "LaflaGPT Mini, Yavuz Selim tarafından geliştirilen yaklaşık 100 milyon parametre hedefli Türkçe ve Almanca odaklı bir Lafla modelidir.",
+  "quality_notes": [
+    "Jailbreak prompts are intentionally short and non-operational.",
+    "Assistant responses refuse unsafe requests and offer safe alternatives.",
+    "Do not treat synthetic current-fact examples as factual evidence."
+  ],
+  "reasoning_policy": "thinking field contains short decision steps, not full private chain-of-thought",
+  "recommended_stage": "post-training safety SFT after base checkpoint",
+  "records": 10000,
+  "safety_objectives": [
+    "jailbreak_resistance",
+    "system_prompt_exfiltration_refusal",
+    "unsafe_tool_request_refusal",
+    "private_data_access_refusal",
+    "hallucination_refusal",
+    "safe_alternative_redirection"
+  ]
+}

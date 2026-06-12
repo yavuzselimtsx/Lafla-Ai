@@ -1,0 +1,32 @@
+# LaflaAi-Core release gates.
+evaluation:
+  required_gates:
+    - tokenizer_roundtrip
+    - turkish_identity
+    - hallucination_refusal
+    - safety_boundary
+    - code_quality
+    - low_power_runtime
+    - completion_only_generation
+    - prompt_echo_guard
+    - mojibake_decode
+    - role_boundary_stop
+    - low_information_generation
+    - german_quality
+    - abstention_accuracy
+    - contradictory_evidence_handling
+    - stale_current_fact_refusal
+    - false_premise_correction
+    - source_faithfulness
+    - long_context_passkey
+    - long_context_needle
+    - cache_equivalence
+    - process_tree_peak_rss
+  minimum_pass_rate: 1.0
+  fixed_prompt_count: 20
+  max_mojibake_count: 0
+  require_artifact_manifest: true
+  minimum_abstention_accuracy: 0.90
+  minimum_source_faithfulness: 0.95
+  minimum_long_context_pass_rate: 0.90
+  maximum_process_tree_peak_rss_mib: 700

@@ -1,0 +1,19 @@
+# Non-quantized low-power runtime profile for LaflaGPT 380M.
+# 380M fp16 weights are small enough for 8GB-class desktops; phones remain lab targets.
+runtime:
+  target: desktop-cpu
+  quantization: none
+  context_length: 2048
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  repetition_penalty: 1.1
+  memory_budget_gb: 8.0
+  thinking_effort: medium
+  thinking_budget_tokens: 256
+  developer_mode: false
+  raw_thinking_visible: false
+  safety_profile: standard
+  context_overflow_strategy: sliding_window
+  system_prompt_leak_guard: true
+  turkish_quality_guard: true

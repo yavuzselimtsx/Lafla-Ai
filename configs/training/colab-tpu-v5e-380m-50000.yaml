@@ -1,0 +1,23 @@
+# Colab TPU v5e profile for LaflaGPT 380M.
+# TPU v5e uses PyTorch/XLA, bf16, and regular AdamW. Start with smoke tests.
+# Effective batch: 8 micro x 8 accumulation = 64 sequences (matches the T4
+# fallback profile, but with larger micro batches since v5e bf16 fits them).
+training:
+  accelerator: xla
+  max_steps: 50000
+  sequence_length: 1024
+  micro_batch_size: 8
+  gradient_accumulation_steps: 8
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.00008
+  min_learning_rate: 0.000008
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 1000
+  save_every: 250
+  keep_last_checkpoints: 4
+  checkpoint_min_free_gb: 8.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: true

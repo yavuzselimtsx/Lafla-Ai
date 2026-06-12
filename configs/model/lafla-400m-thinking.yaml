@@ -1,0 +1,27 @@
+# Lafla 400M thinking model target.
+# Colab T4 icin 4000 step kosulabilir, onceki buyuk hedefe gore daha hafif mimari.
+model:
+  name: lafla-400m-thinking
+  family: decoder-only
+  display_name: LaflaGPT 400M
+  creator_name: Yavuz Selim
+  identity_statement: LaflaGPT 400M, Yavuz Selim tarafindan gelistirilen Turkce oncelikli bir Lafla modelidir.
+  parameter_target: 400000000
+  vocab_size: 65536
+  context_length: 2048
+  hidden_size: 1536
+  intermediate_size: 3840
+  num_layers: 12
+  num_attention_heads: 12
+  num_key_value_heads: 6
+  activation: swiglu
+  norm: rmsnorm
+  rope: true
+  qk_norm: true
+  rope_theta: 10000.0
+  norm_eps: 0.00001
+  dropout: 0.0
+  tie_word_embeddings: true
+  use_bias: false
+  gradient_checkpointing: true
+  initializer_std: 0.02

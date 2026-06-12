@@ -1,0 +1,36 @@
+# LaflaGPT Mini: 100M teknik hedefli, Turkce ve Almanca odakli, uzun baglamli decoder-only model.
+model:
+  name: lafla-100m-thinking
+  family: decoder-only
+  display_name: LaflaGPT Mini
+  creator_name: Yavuz Selim
+  identity_statement: LaflaGPT Mini, Yavuz Selim tarafından geliştirilen yaklaşık 100 milyon parametre hedefli Türkçe ve Almanca odaklı bir Lafla modelidir.
+  parameter_target: 100000000
+  vocab_size: 32768
+  context_length: 20480
+  hidden_size: 768
+  intermediate_size: 2048
+  num_layers: 12
+  num_attention_heads: 12
+  num_key_value_heads: 2
+  activation: swiglu
+  norm: rmsnorm
+  rope: true
+  qk_norm: true
+  rope_theta: 10000.0
+  rope_scaling:
+    type: linear
+    factor: 5.0
+    original_context_length: 4096
+  attention_pattern:
+    - local
+    - local
+    - local
+    - global
+  sliding_window: 4096
+  norm_eps: 0.00001
+  dropout: 0.0
+  tie_word_embeddings: true
+  use_bias: false
+  gradient_checkpointing: true
+  initializer_std: 0.02

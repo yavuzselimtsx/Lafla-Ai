@@ -1,0 +1,19 @@
+# Colab T4 training defaults for Lafla 400M.
+training:
+  max_steps: 4000
+  sequence_length: 512
+  micro_batch_size: 1
+  gradient_accumulation_steps: 32
+  precision: fp16
+  optimizer: adamw8bit
+  learning_rate: 0.0003
+  min_learning_rate: 0.00003
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 400
+  save_every: 250
+  keep_last_checkpoints: 5
+  checkpoint_min_free_gb: 5.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: true

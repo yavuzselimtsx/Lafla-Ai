@@ -1,0 +1,24 @@
+{
+  "allowed_for_post_training": true,
+  "allowed_for_pretraining": false,
+  "data_kind": "synthetic_sft_seed",
+  "dataset_version": "lafla-100m-synthetic-thinking-chat-seed-2026-06",
+  "fields": [
+    "system",
+    "user",
+    "thinking",
+    "assistant"
+  ],
+  "format": "jsonl",
+  "identity_policy": "LaflaGPT Mini, Yavuz Selim tarafından geliştirilen yaklaşık 100 milyon parametre hedefli Türkçe ve Almanca odaklı bir Lafla modelidir.",
+  "quality_notes": [
+    "Use for identity, uncertainty, refusal, Turkish/German tone, and bot-context behavior.",
+    "Do not treat generated current-affairs statements as factual evidence.",
+    "Validate with lafla_ai_core.cli.validate_thinking_sft before training."
+  ],
+  "reasoning_policy": "thinking field contains concise training rationale, not a private chain-of-thought transcript",
+  "recommended_stage": "short supervised fine-tuning after real pretraining",
+  "recommended_weight": "low; do not mix as factual corpus",
+  "records": 20000,
+  "source": "profile-driven deterministic local templates"
+}

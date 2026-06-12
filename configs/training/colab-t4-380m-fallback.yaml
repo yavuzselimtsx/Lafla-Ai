@@ -1,0 +1,21 @@
+# Colab T4 fallback profile for LaflaGPT 380M.
+# Slower than TPU v5e; use only if torch_xla/TPU runtime fails.
+training:
+  accelerator: cuda
+  max_steps: 50000
+  sequence_length: 1024
+  micro_batch_size: 2
+  gradient_accumulation_steps: 32
+  precision: fp16
+  optimizer: adamw
+  learning_rate: 0.00018
+  min_learning_rate: 0.000018
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 1500
+  save_every: 250
+  keep_last_checkpoints: 3
+  checkpoint_min_free_gb: 8.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: true

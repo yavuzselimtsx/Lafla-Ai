@@ -1,0 +1,2 @@
+"""LaflaAi-Core model katmani."""
+

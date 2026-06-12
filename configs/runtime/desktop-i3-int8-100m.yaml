@@ -1,0 +1,31 @@
+# i3-1215U / 8 GB sinifi masaustu icin tek istekli INT8 profil.
+runtime:
+  target: desktop-cpu
+  quantization: 8bit
+  weight_dtype: int8
+  cache_implementation: dynamic
+  cache_dtype: bf16
+  batch_size: 1
+  max_concurrent_generations: 1
+  context_length: 20480
+  max_new_tokens: 2048
+  temperature: 0.65
+  top_p: 0.9
+  repetition_penalty: 1.08
+  memory_budget_gb: 0.68359375
+  peak_rss_limit_mib: 700
+  runtime_overhead_mib: 256
+  allocator_headroom_ratio: 0.15
+  thinking_effort: medium
+  thinking_budget_tokens: 384
+  developer_mode: false
+  raw_thinking_visible: false
+  safety_profile: standard
+  context_overflow_strategy: summarize_then_slide
+  summary_trigger_tokens: 15360
+  summary_max_tokens: 2048
+  preserve_recent_tokens: 4096
+  retrieval_max_tokens: 2048
+  output_reserve_tokens: 2048
+  system_prompt_leak_guard: true
+  turkish_quality_guard: true

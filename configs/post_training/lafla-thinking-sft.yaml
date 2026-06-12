@@ -1,0 +1,10 @@
+# Lafla thinking SFT profile.
+post_training:
+  stage: thinking_sft
+  sequence_length: 512
+  learning_rate: 0.000025
+  epochs: 2
+  label_policy: assistant_with_thinking
+  only_last_assistant: true
+  public_thinking_visible: false
+  max_thinking_chars: 4000

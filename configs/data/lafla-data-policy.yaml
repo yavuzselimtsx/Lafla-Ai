@@ -1,0 +1,30 @@
+# LaflaAi-Core data policy.
+data_policy:
+  dataset_version_required: true
+  unknown_license_allowed: false
+  pii_required_for_instruction_and_preference: true
+  synthetic_data_requires_teacher_and_source: true
+  minimum_turkish_conversation_tokens: 250000000
+  minimum_german_conversation_tokens: 150000000
+  minimum_evaluation_sets: 4
+  source_url_required: true
+  fake_bootstrap_data_allowed: false
+  manifest_hash_required: true
+  manifest_snapshot_required: true
+  manifest_token_count_required: true
+  review_required_automatic_download_allowed: false
+  eval_contamination_scan_required: true
+  exact_and_near_dedup_required: true
+  secret_scan_required: true
+  allowed_usages:
+    - pretraining
+    - instruction
+    - preference
+    - truthfulness_eval
+    - hallucination_eval
+    - dialogue_eval
+  allowed_trust_tiers:
+    - primary
+    - local_reviewed
+    - owned
+    - secondary_review_required

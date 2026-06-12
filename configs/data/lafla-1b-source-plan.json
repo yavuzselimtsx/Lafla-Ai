@@ -1,0 +1,72 @@
+{
+  "source_plan": {
+    "dataset_version": "lafla-1b-thinking-2026-06",
+    "target_steps": 100000,
+    "target_tokens_policy": "large_real_data_dedup_then_resume_until_final_step",
+    "sources": [
+      {
+        "source_id": "fineweb2_turkish",
+        "loader": "HuggingFaceFW/fineweb-2",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "weight": 0.44,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "fineweb2_hq_turkish",
+        "loader": "epfml/FineWeb2-HQ",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "weight": 0.18,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "wikimedia_tr",
+        "loader": "wikimedia/wikipedia",
+        "subset": "tr",
+        "usage": "pretraining",
+        "weight": 0.08,
+        "license": "CC-BY-SA-3.0/GFDL",
+        "status": "attribution_required"
+      },
+      {
+        "source_id": "oscar_tr_reviewed",
+        "loader": "oscar-corpus/OSCAR-2301",
+        "subset": "tr",
+        "usage": "pretraining",
+        "weight": 0.10,
+        "license": "CC0-packaging-source-rights-review",
+        "status": "review_required"
+      },
+      {
+        "source_id": "aya_dataset_turkish_instruction",
+        "loader": "CohereLabs/aya_dataset",
+        "subset": "tur",
+        "usage": "instruction",
+        "weight": 0.08,
+        "license": "Apache-2.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "dolly_turkish_instruction_reviewed",
+        "loader": "databricks/databricks-dolly-15k",
+        "subset": "translated_or_turkish_filtered",
+        "usage": "instruction",
+        "weight": 0.04,
+        "license": "CC-BY-SA-3.0",
+        "status": "secondary_review_required"
+      },
+      {
+        "source_id": "lafla_identity_dialogues_1b",
+        "loader": "local_jsonl",
+        "subset": "lafla-identity-tr-1b",
+        "usage": "instruction",
+        "weight": 0.08,
+        "license": "lafla-owned",
+        "status": "owned"
+      }
+    ]
+  }
+}

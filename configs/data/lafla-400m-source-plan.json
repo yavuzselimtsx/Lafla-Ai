@@ -1,0 +1,72 @@
+{
+  "source_plan": {
+    "dataset_version": "lafla-400m-thinking-2026-06",
+    "target_steps": 4000,
+    "target_tokens_policy": "diverse_until_final_step",
+    "sources": [
+      {
+        "source_id": "fineweb2_turkish",
+        "loader": "HuggingFaceFW/fineweb-2",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "weight": 0.42,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "fineweb2_hq_turkish",
+        "loader": "epfml/FineWeb2-HQ",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "weight": 0.20,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "hplt_v2_turkish_cleaned",
+        "loader": "hplt-v2-cleaned",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "weight": 0.10,
+        "license": "CC0-packaging-source-rights-review",
+        "status": "review_required"
+      },
+      {
+        "source_id": "wikimedia_tr",
+        "loader": "wikimedia/wikipedia",
+        "subset": "tr",
+        "usage": "pretraining",
+        "weight": 0.06,
+        "license": "CC-BY-SA-3.0/GFDL",
+        "status": "attribution_required"
+      },
+      {
+        "source_id": "aya_dataset_turkish_instruction",
+        "loader": "CohereLabs/aya_dataset",
+        "subset": "tur",
+        "usage": "instruction",
+        "weight": 0.08,
+        "license": "Apache-2.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "tulu3_sft_mixture_reviewed",
+        "loader": "allenai/tulu-3-sft-mixture",
+        "subset": "reviewed_allowed_subsets_only",
+        "usage": "instruction",
+        "weight": 0.06,
+        "license": "ODC-By-1.0-with-subset-review",
+        "status": "secondary_review_required"
+      },
+      {
+        "source_id": "lafla_identity_dialogues",
+        "loader": "local_jsonl",
+        "subset": "lafla-identity-tr",
+        "usage": "instruction",
+        "weight": 0.08,
+        "license": "lafla-owned",
+        "status": "owned"
+      }
+    ]
+  }
+}

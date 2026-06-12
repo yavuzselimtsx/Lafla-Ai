@@ -1,0 +1,19 @@
+{
+  "acceptance_limit_mib": 700,
+  "accepted": false,
+  "estimate": {
+    "allocator_headroom_bytes": 62563776,
+    "configured_limit_bytes": 734003200,
+    "kv_cache_bytes": 50331648,
+    "parameter_count": 98324736,
+    "runtime_overhead_bytes": 268435456,
+    "total_bytes": 479655616,
+    "weight_bytes": 98324736,
+    "within_configured_limit": true
+  },
+  "model_config": "configs/model/lafla-100m-thinking.yaml",
+  "profiles": [],
+  "reason": "eksik dependency: torch, transformers",
+  "runtime_config": "configs/runtime/desktop-i3-int8-100m.yaml",
+  "status": "blocked"
+}

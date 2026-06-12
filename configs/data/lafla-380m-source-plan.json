@@ -1,0 +1,108 @@
+{
+  "source_plan": {
+    "dataset_version": "lafla-380m-thinking-realdata-2026-06",
+    "target_steps": 50000,
+    "target_tokens_policy": "stream_real_sources_deduplicate_prepare_large_seed_then_resume_until_final_step",
+    "sources": [
+      {
+        "source_id": "fineweb2_turkish",
+        "loader": "HuggingFaceFW/fineweb-2",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "domain": "turkish",
+        "data_kind": "real_or_owned",
+        "weight": 0.31,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "fineweb2_hq_turkish",
+        "loader": "epfml/FineWeb2-HQ",
+        "subset": "tur_Latn",
+        "usage": "pretraining",
+        "domain": "turkish",
+        "data_kind": "real_or_owned",
+        "weight": 0.16,
+        "license": "ODC-By-1.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "wikimedia_tr",
+        "loader": "wikimedia/wikipedia",
+        "subset": "20231101.tr",
+        "usage": "pretraining",
+        "domain": "turkish",
+        "data_kind": "real_or_owned",
+        "weight": 0.07,
+        "license": "CC-BY-SA-3.0/GFDL",
+        "status": "attribution_required"
+      },
+      {
+        "source_id": "fineweb2_english",
+        "loader": "HuggingFaceFW/fineweb-2",
+        "subset": "eng_Latn",
+        "usage": "pretraining",
+        "domain": "english",
+        "data_kind": "real_or_owned",
+        "weight": 0.11,
+        "license": "ODC-By-1.0",
+        "status": "secondary"
+      },
+      {
+        "source_id": "open_web_math",
+        "loader": "open-web-math/open-web-math",
+        "subset": "default",
+        "usage": "pretraining",
+        "domain": "math",
+        "data_kind": "real_or_owned",
+        "weight": 0.11,
+        "license": "dataset_card_review_required",
+        "status": "review_required"
+      },
+      {
+        "source_id": "the_stack_v2_smol_code",
+        "loader": "bigcode/the-stack-v2-train-smol-ids",
+        "subset": "train",
+        "usage": "pretraining",
+        "domain": "code",
+        "data_kind": "real_or_owned",
+        "weight": 0.08,
+        "license": "permissive_license_filtered",
+        "status": "review_required"
+      },
+      {
+        "source_id": "security_docs_local_reviewed",
+        "loader": "local_jsonl",
+        "subset": "defensive-security-docs",
+        "usage": "pretraining",
+        "domain": "cybersecurity",
+        "data_kind": "real_or_owned",
+        "weight": 0.04,
+        "license": "source_specific_review_required",
+        "status": "optional_review_required"
+      },
+      {
+        "source_id": "aya_dataset_turkish_instruction",
+        "loader": "CohereLabs/aya_dataset",
+        "subset": "train",
+        "usage": "instruction",
+        "domain": "turkish",
+        "data_kind": "real_or_owned",
+        "weight": 0.05,
+        "license": "Apache-2.0",
+        "status": "primary"
+      },
+      {
+        "source_id": "lafla_identity_dialogues_380m",
+        "loader": "local_jsonl",
+        "subset": "lafla-identity-tr-380m",
+        "usage": "instruction",
+        "domain": "identity",
+        "data_kind": "real_or_owned",
+        "weight": 0.07,
+        "license": "lafla-owned",
+        "status": "owned"
+      }
+    ]
+  }
+}

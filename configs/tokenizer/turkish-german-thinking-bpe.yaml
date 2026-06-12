@@ -1,0 +1,23 @@
+# Turkce-Almanca agirlikli, kod ve arac kullanimini da kapsayan BPE tokenizer.
+tokenizer:
+  kind: bpe
+  vocab_size: 32768
+  normalization: utf8_nfc
+  required_special_tokens:
+    - "<|bos|>"
+    - "<|eos|>"
+    - "<|pad|>"
+    - "<|system|>"
+    - "<|user|>"
+    - "<|assistant|>"
+    - "<|think|>"
+    - "<|/think|>"
+    - "<|tool|>"
+    - "<|document|>"
+    - "<|/document|>"
+  quality_gates:
+    max_unknown_rate: 0.0001
+    turkish_roundtrip_required: true
+    german_roundtrip_required: true
+    mojibake_rejection_required: true
+    code_block_coverage_required: true

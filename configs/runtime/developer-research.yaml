@@ -1,0 +1,18 @@
+# Developer research runtime profile.
+runtime:
+  target: research-gpu
+  quantization: none
+  context_length: 2048
+  max_new_tokens: 512
+  temperature: 0.65
+  top_p: 0.92
+  repetition_penalty: 1.08
+  memory_budget_gb: 16.0
+  thinking_effort: high
+  thinking_budget_tokens: 512
+  developer_mode: true
+  raw_thinking_visible: true
+  safety_profile: research
+  context_overflow_strategy: summarize_then_slide
+  system_prompt_leak_guard: true
+  turkish_quality_guard: true

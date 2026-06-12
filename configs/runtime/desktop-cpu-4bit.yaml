@@ -1,0 +1,18 @@
+# Low-power desktop runtime target.
+runtime:
+  target: desktop-cpu
+  quantization: 4bit
+  context_length: 1024
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  repetition_penalty: 1.12
+  memory_budget_gb: 6.0
+  thinking_effort: low
+  thinking_budget_tokens: 64
+  developer_mode: false
+  raw_thinking_visible: false
+  safety_profile: standard
+  context_overflow_strategy: sliding_window
+  system_prompt_leak_guard: true
+  turkish_quality_guard: true
