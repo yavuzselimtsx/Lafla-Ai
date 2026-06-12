@@ -12,9 +12,9 @@ more reliable, but it will be much slower.
 
 ## Files
 
-- TPU config: `configs/training/colab-tpu-v5e-380m-50000.yaml`
-- T4 fallback config: `configs/training/colab-t4-380m-fallback.yaml`
-- TPU launcher: `scripts/colab_start_tpu_v5e_380m.sh`
+- TPU config: `configs/training/colab/colab-tpu-v5e-380m-50000.yaml`
+- T4 fallback config: `configs/training/colab/colab-t4-380m-fallback.yaml`
+- TPU launcher: `scripts/colab/start_tpu_v5e_380m.sh`
 - Root convenience launcher: `colab_start_tpu_v5e_380m.sh`
 
 ## Colab Flow
@@ -31,5 +31,5 @@ sample, and starts the 380M bf16 pretraining run.
 ## Fallback
 
 If TPU initialization fails before training starts, switch Colab runtime to T4
-and use `configs/training/colab-t4-380m-fallback.yaml`. Do not try to run the
+and use `configs/training/colab/colab-t4-380m-fallback.yaml`. Do not try to run the
 TPU config on a T4 runtime.

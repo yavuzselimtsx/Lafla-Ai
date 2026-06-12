@@ -10,7 +10,7 @@ from lafla_ai_core.config.schema import ModelConfig, PostTrainingConfig, Runtime
 class ConfigPreflightTest(unittest.TestCase):
     def test_lafla_100m_profile_loads_with_long_context_runtime_contracts(self):
         model_path = Path("configs/model/lafla-100m-thinking.yaml")
-        training_path = Path("configs/training/colab-tpu-v5e-100m.yaml")
+        training_path = Path("configs/training/colab/colab-tpu-v5e-100m.yaml")
         tokenizer_path = Path("configs/tokenizer/turkish-german-thinking-bpe.yaml")
         runtime_path = Path("configs/runtime/desktop-i3-int8-100m.yaml")
 
@@ -44,7 +44,7 @@ class ConfigPreflightTest(unittest.TestCase):
 
     def test_lafla_1b_h200_config_loads_and_validates(self):
         model = ModelConfig.from_mapping(load_mapping("configs/model/lafla-1b-thinking.yaml"))
-        training = TrainingConfig.from_mapping(load_mapping("configs/training/lightning-h200-1b-100000.yaml"))
+        training = TrainingConfig.from_mapping(load_mapping("configs/training/lightning/lightning-h200-1b-100000.yaml"))
         model.validate()
         training.validate()
         self.assertEqual(model.name, "lafla-1b-thinking")
@@ -57,7 +57,7 @@ class ConfigPreflightTest(unittest.TestCase):
 
     def test_lafla_380m_h200_config_loads_and_validates_for_50000_steps(self):
         model = ModelConfig.from_mapping(load_mapping("configs/model/lafla-380m-thinking.yaml"))
-        training = TrainingConfig.from_mapping(load_mapping("configs/training/lightning-h200-380m-50000.yaml"))
+        training = TrainingConfig.from_mapping(load_mapping("configs/training/lightning/lightning-h200-380m-50000.yaml"))
         runtime = RuntimeConfig.from_mapping(load_mapping("configs/runtime/desktop-phone-fp16-380m.yaml"))
 
         model.validate()
@@ -77,8 +77,8 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertLessEqual(runtime.memory_budget_gb, 8.0)
 
     def test_colab_tpu_v5e_380m_config_is_xla_bf16_and_safer_than_t4(self):
-        tpu = TrainingConfig.from_mapping(load_mapping("configs/training/colab-tpu-v5e-380m-50000.yaml"))
-        t4 = TrainingConfig.from_mapping(load_mapping("configs/training/colab-t4-380m-fallback.yaml"))
+        tpu = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-tpu-v5e-380m-50000.yaml"))
+        t4 = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-t4-380m-fallback.yaml"))
 
         tpu.validate()
         t4.validate()

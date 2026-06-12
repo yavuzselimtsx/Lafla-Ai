@@ -39,4 +39,4 @@ kalite belirsizliğini eğitim hattına sessizce sokmamaktır.
 - Test splitleri pretraining'e karıştırılmaz.
 - Kaynak URL ve source_id rapora yazılmadan checkpoint kabul edilmez.
 
-Uygulanan plan: `configs/data/lafla-400m-source-plan.json`.
+Uygulanan plan: `configs/data/source-plans/lafla-400m-source-plan.json`.

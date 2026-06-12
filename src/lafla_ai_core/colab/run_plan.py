@@ -19,8 +19,8 @@ from typing import Sequence
 
 
 DEFAULT_THINKING_SFT_DATA = (
-    "datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl",
-    "datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl",
+    "datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl",
+    "datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl",
 )
 
 
@@ -42,12 +42,12 @@ class ColabTrainingProfile:
     """Aktif Colab model ailesinin tum config ve kimlik yollarini tasir."""
 
     model_config: str = "configs/model/lafla-100m-thinking.yaml"
-    training_config: str = "configs/training/colab-tpu-v5e-100m.yaml"
+    training_config: str = "configs/training/colab/colab-tpu-v5e-100m.yaml"
     tokenizer_config: str = "configs/tokenizer/turkish-german-thinking-bpe.yaml"
     runtime_config: str = "configs/runtime/desktop-i3-int8-100m.yaml"
     post_training_config: str = "configs/post_training/lafla-thinking-sft.yaml"
-    identity_data: str = "configs/data/lafla-model-identity-100m.jsonl"
-    source_plan: str = "configs/data/lafla-100m-source-plan.json"
+    identity_data: str = "configs/data/identity/lafla-model-identity-100m.jsonl"
+    source_plan: str = "configs/data/source-plans/lafla-100m-source-plan.json"
     thinking_sft_data: tuple[str, ...] = DEFAULT_THINKING_SFT_DATA
     model_name: str = "lafla-100m-thinking"
 

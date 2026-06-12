@@ -53,10 +53,10 @@ class SafetyJailbreakSeedTest(unittest.TestCase):
 
     def test_default_paths_and_count_match_requested_dataset(self):
         self.assertEqual(DEFAULT_SAFETY_COUNT, 10_000)
-        self.assertEqual(DEFAULT_SAFETY_OUTPUT_PATH.as_posix(), "datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl")
+        self.assertEqual(DEFAULT_SAFETY_OUTPUT_PATH.as_posix(), "datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl")
         self.assertEqual(
             DEFAULT_SAFETY_MANIFEST_PATH.as_posix(),
-            "datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.manifest.json",
+            "datasets/post_training/safety/manifests/lafla-100m-safety-jailbreak-seed-10k.manifest.json",
         )
 
     def test_cli_writes_dataset_and_manifest(self):

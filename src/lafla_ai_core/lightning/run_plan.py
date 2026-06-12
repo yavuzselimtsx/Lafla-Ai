@@ -27,9 +27,9 @@ class LightningPaths:
     tokenizer_path: str = "/teamspace/studios/this_studio/LaflaAI380M/tokenizer/lafla-tokenizer.json"
     tokenizer_report_path: str = "/teamspace/studios/this_studio/LaflaAI380M/reports/tokenizer-quality.json"
     model_config: str = "configs/model/lafla-380m-thinking.yaml"
-    training_config: str = "configs/training/lightning-h200-380m-50000.yaml"
+    training_config: str = "configs/training/lightning/lightning-h200-380m-50000.yaml"
     runtime_config: str = "configs/runtime/desktop-phone-fp16-380m.yaml"
-    identity_data: str = "configs/data/lafla-model-identity-380m.jsonl"
+    identity_data: str = "configs/data/identity/lafla-model-identity-380m.jsonl"
     model_name: str = "lafla-380m-thinking"
 
     @classmethod

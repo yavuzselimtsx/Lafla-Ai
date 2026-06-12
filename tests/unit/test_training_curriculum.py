@@ -7,7 +7,7 @@ from lafla_ai_core.training.curriculum import resolve_curriculum_stage, tokens_p
 
 class TrainingCurriculumTest(unittest.TestCase):
     def test_resolves_sequence_length_from_cumulative_token_boundaries(self):
-        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab-tpu-v5e-100m.yaml"))
+        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-tpu-v5e-100m.yaml"))
 
         self.assertEqual(resolve_curriculum_stage(config, 0).sequence_length, 2048)
         self.assertEqual(resolve_curriculum_stage(config, 3_600_000_000).sequence_length, 4096)
@@ -17,13 +17,13 @@ class TrainingCurriculumTest(unittest.TestCase):
         self.assertEqual(resolve_curriculum_stage(config, 5_900_000_000).sequence_length, 20480)
 
     def test_non_curriculum_config_uses_base_sequence_length(self):
-        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab-tpu-v5e-380m-50000.yaml"))
+        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-tpu-v5e-380m-50000.yaml"))
         stage = resolve_curriculum_stage(config, 123)
         self.assertEqual(stage.index, 0)
         self.assertEqual(stage.sequence_length, config.sequence_length)
 
     def test_optimizer_step_token_count_uses_active_stage_length(self):
-        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab-tpu-v5e-100m.yaml"))
+        config = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-tpu-v5e-100m.yaml"))
         stage = resolve_curriculum_stage(config, 4_800_000_000)
         self.assertEqual(
             tokens_per_optimizer_step(config, stage),

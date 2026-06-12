@@ -29,11 +29,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
 from lafla_ai_core.data.packing import TokenizersCodec, iter_jsonl_texts, iter_packed_token_blocks, resolve_special_token_id
+from lafla_ai_core.data.routing import assert_pretraining_inputs
 from lafla_ai_core.model.checkpoint_io import load_training_checkpoint, save_training_checkpoint
 from lafla_ai_core.model.transformer import LaflaDecoderModel
 from lafla_ai_core.training.checkpoint_policy import CheckpointPolicy, retention_victims, should_save_checkpoint
 from lafla_ai_core.training.curriculum import CurriculumStage, resolve_curriculum_stage, tokens_per_optimizer_step
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
+from lafla_ai_core.training.parallelism import ParallelismDecision, effective_micro_batch_size, resolve_data_parallel
 from lafla_ai_core.training.stability import StabilityMonitor
 
 
@@ -91,6 +93,20 @@ class SmokeTokenBlockDataset(IterableDataset[torch.Tensor]):
             yield torch.randint(0, self.vocab_size, (self.sequence_length,), generator=generator, dtype=torch.long)
 
 
+class _TrainingLossModule(torch.nn.Module):
+    """DataParallel'in rahat toplayacagi skaler loss arayuzu."""
+
+    def __init__(self, model: torch.nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        output = self.model(input_ids, labels=labels)
+        if output.loss is None:
+            raise RuntimeError("loss uretilemedi")
+        return output.loss
+
+
 def run_pretraining(
     model_config: ModelConfig,
     training_config: TrainingConfig,
@@ -116,6 +132,7 @@ def run_pretraining(
     if not smoke:
         if not paths.data_jsonl:
             raise ValueError("gercek egitim icin en az bir data_jsonl gerekli")
+        assert_pretraining_inputs(paths.data_jsonl)
         tokenizer_probe = TokenizersCodec(paths.tokenizer_path)
         eos_id = resolve_special_token_id(tokenizer_probe, "<|eos|>")
         tokenizer_vocab_size = tokenizer_probe.vocab_size()
@@ -124,12 +141,17 @@ def run_pretraining(
                 f"tokenizer vocab_size model vocab_size ile ayni olmali: tokenizer={tokenizer_vocab_size}, model={model_config.vocab_size}"
             )
 
-    model = LaflaDecoderModel(model_config).to(device)
-    optimizer = build_optimizer(model, training_config)
+    base_model = LaflaDecoderModel(model_config).to(device)
+    train_model = _TrainingLossModule(base_model)
+    parallel_decision = _resolve_data_parallel(training_config, device)
+    active_micro_batch_size = effective_micro_batch_size(training_config.micro_batch_size, parallel_decision)
+    if parallel_decision.enabled:
+        train_model = torch.nn.DataParallel(train_model)
+    optimizer = build_optimizer(train_model, training_config)
     start_step = 0
     cumulative_tokens = 0
     if paths.resume_from:
-        state = load_training_checkpoint(paths.resume_from, model, optimizer, map_location="cpu" if device.type == "xla" else device)
+        state = load_training_checkpoint(paths.resume_from, base_model, optimizer, map_location="cpu" if device.type == "xla" else device)
         _move_optimizer_state(optimizer, device)
         start_step = int(state.get("step", 0))
         cumulative_tokens = int(state.get("cumulative_tokens", 0))
@@ -142,6 +164,7 @@ def run_pretraining(
         active_stage,
         eos_id=eos_id,
         smoke=smoke,
+        micro_batch_size=active_micro_batch_size,
     )
     scaler = _build_grad_scaler(device, training_config.precision)
     policy = CheckpointPolicy(training_config.save_every, training_config.keep_last_checkpoints)
@@ -159,6 +182,10 @@ def run_pretraining(
                 "cumulative_tokens": cumulative_tokens,
                 "curriculum_stage": active_stage.index,
                 "sequence_length": active_stage.sequence_length,
+                "parallelism": parallel_decision.mode,
+                "cuda_device_count": parallel_decision.cuda_device_count,
+                "configured_micro_batch_size": training_config.micro_batch_size,
+                "effective_micro_batch_size": active_micro_batch_size,
             },
         )
 
@@ -177,6 +204,7 @@ def run_pretraining(
                     active_stage,
                     eos_id=eos_id,
                     smoke=smoke,
+                    micro_batch_size=active_micro_batch_size,
                 )
                 _append_health(
                     health_log,
@@ -186,6 +214,8 @@ def run_pretraining(
                         "cumulative_tokens": cumulative_tokens,
                         "curriculum_stage": active_stage.index,
                         "sequence_length": active_stage.sequence_length,
+                        "configured_micro_batch_size": training_config.micro_batch_size,
+                        "effective_micro_batch_size": active_micro_batch_size,
                     },
                 )
             lr = cosine_with_warmup_lr(
@@ -202,22 +232,21 @@ def run_pretraining(
                 batch = next(iterator).to(device)
                 labels = batch.clone()
                 with _autocast_context(device, dtype):
-                    output = model(batch, labels=labels)
-                    if output.loss is None:
-                        raise RuntimeError("loss uretilemedi")
-                    if not torch.isfinite(output.loss.detach()):
+                    raw_loss = train_model(batch, labels=labels)
+                    step_loss = raw_loss.mean()
+                    if not torch.isfinite(step_loss.detach()):
                         raise RuntimeError(
-                            f"finite olmayan loss: step={step}, micro_step={micro_step}, loss={float(output.loss.detach().cpu())}"
+                            f"finite olmayan loss: step={step}, micro_step={micro_step}, loss={float(step_loss.detach().cpu())}"
                         )
-                    loss = output.loss / training_config.gradient_accumulation_steps
-                accumulated_loss += float(output.loss.detach().cpu())
+                    loss = step_loss / training_config.gradient_accumulation_steps
+                accumulated_loss += float(step_loss.detach().cpu())
                 scaler.scale(loss).backward()
                 if xla_sync is not None:
                     xla_sync()
             scaler.unscale_(optimizer)
             # XLA dahil tum cihazlarda clipping uygulanir; grad_clip_norm config
             # degeri hicbir accelerator yolunda sessizce yok sayilmamali.
-            grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(), training_config.grad_clip_norm))
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(train_model.parameters(), training_config.grad_clip_norm))
             if xla_sync is None:
                 scaler.step(optimizer)
                 scaler.update()
@@ -228,7 +257,11 @@ def run_pretraining(
 
             average_loss = accumulated_loss / training_config.gradient_accumulation_steps
             previous_tokens = cumulative_tokens
-            cumulative_tokens += tokens_per_optimizer_step(training_config, active_stage)
+            cumulative_tokens += tokens_per_optimizer_step(
+                training_config,
+                active_stage,
+                micro_batch_size=active_micro_batch_size,
+            )
             stability_observation = stability.observe(step=step, loss=average_loss, grad_norm=grad_norm)
             if step % training_config.log_every == 0 or step == 1:
                 _append_health(
@@ -243,6 +276,12 @@ def run_pretraining(
                         "spike_score": round(stability_observation.spike_score, 6),
                         "device": str(device),
                         "accelerator": training_config.accelerator,
+                        "parallelism": parallel_decision.mode,
+                        "data_parallel": parallel_decision.enabled,
+                        "data_parallel_reason": parallel_decision.reason,
+                        "cuda_device_count": parallel_decision.cuda_device_count,
+                        "configured_micro_batch_size": training_config.micro_batch_size,
+                        "effective_micro_batch_size": active_micro_batch_size,
                         "tokenizer_vocab_size": tokenizer_vocab_size,
                         "cumulative_tokens": cumulative_tokens,
                         "curriculum_stage": active_stage.index,
@@ -258,7 +297,7 @@ def run_pretraining(
             if should_save_checkpoint(step, training_config.max_steps, policy) or token_checkpoint_due:
                 save_training_checkpoint(
                     checkpoint_root / f"lafla-step-{step:06d}",
-                    model,
+                    base_model,
                     optimizer,
                     model_config,
                     _trainer_state(step, training_config, smoke, cumulative_tokens, active_stage),
@@ -269,7 +308,7 @@ def run_pretraining(
         if last_completed_step > start_step:
             save_training_checkpoint(
                 checkpoint_root / f"lafla-interrupted-step-{last_completed_step:06d}",
-                model,
+                base_model,
                 optimizer,
                 model_config,
                 _trainer_state(last_completed_step, training_config, smoke, cumulative_tokens, active_stage),
@@ -279,7 +318,7 @@ def run_pretraining(
     final_dir = checkpoint_root / "lafla-final"
     save_training_checkpoint(
         final_dir,
-        model,
+        base_model,
         optimizer,
         model_config,
         _trainer_state(last_completed_step, training_config, smoke, cumulative_tokens, active_stage),
@@ -340,13 +379,14 @@ def _build_training_iterator(
     *,
     eos_id: int,
     smoke: bool,
+    micro_batch_size: int | None = None,
 ):
     dataset: IterableDataset[torch.Tensor]
     if smoke:
         dataset = SmokeTokenBlockDataset(model_config.vocab_size, stage.sequence_length, training_config.seed + stage.index)
     else:
         dataset = JsonlTokenBlockDataset(paths.data_jsonl, paths.tokenizer_path, stage.sequence_length, eos_id=eos_id)
-    loader = DataLoader(dataset, batch_size=training_config.micro_batch_size)
+    loader = DataLoader(dataset, batch_size=training_config.micro_batch_size if micro_batch_size is None else micro_batch_size)
     return iter(loader)
 
 
@@ -418,6 +458,13 @@ def _select_training_device(config: TrainingConfig) -> tuple[torch.device, Calla
     if torch.cuda.is_available():
         return torch.device("cuda"), None
     return torch.device("cpu"), None
+
+
+def _resolve_data_parallel(config: TrainingConfig, device: torch.device) -> DataParallelDecision:
+    """CUDA coklu GPU kararini verir; tek cihaz/CPU/TPU durumunda sessizce tek cihaza duser."""
+
+    cuda_device_count = torch.cuda.device_count() if device.type == "cuda" else 0
+    return resolve_data_parallel(config.data_parallel, device.type, cuda_device_count)
 
 
 def _looks_like_tpu_runtime() -> bool:

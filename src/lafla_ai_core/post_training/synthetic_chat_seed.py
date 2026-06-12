@@ -28,8 +28,8 @@ from lafla_ai_core.post_training.seed_profile import (
 from lafla_ai_core.post_training.thinking_sft import ThinkingSftRecord
 
 
-DEFAULT_OUTPUT_PATH = Path("datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl")
-DEFAULT_MANIFEST_PATH = Path("datasets/synthetic/lafla-100m-thinking-chat-seed-20k.manifest.json")
+DEFAULT_OUTPUT_PATH = Path("datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl")
+DEFAULT_MANIFEST_PATH = Path("datasets/post_training/thinking/manifests/lafla-100m-thinking-chat-seed-20k.manifest.json")
 DEFAULT_COUNT = 20_000
 
 

@@ -19,7 +19,7 @@
 - Create: `configs/model/lafla-100m-thinking.yaml`
 - Create: `configs/tokenizer/turkish-german-thinking-bpe.yaml`
 - Create: `configs/runtime/desktop-i3-int8-100m.yaml`
-- Create: `configs/training/colab-tpu-v5e-100m.yaml`
+- Create: `configs/training/colab/colab-tpu-v5e-100m.yaml`
 - Test: `tests/unit/test_checkpoint_publish.py`
 - Test: `tests/unit/test_config_preflight.py`
 - Test: `tests/unit/test_model_size.py`
@@ -104,8 +104,8 @@
 ### Task 6: Add 100M real-data policy, uncertainty contracts, and release gates
 
 **Files:**
-- Create: `configs/data/lafla-100m-source-plan.json`
-- Create: `configs/data/lafla-model-identity-100m.jsonl`
+- Create: `configs/data/source-plans/lafla-100m-source-plan.json`
+- Create: `configs/data/identity/lafla-model-identity-100m.jsonl`
 - Modify: `configs/data/lafla-data-policy.yaml`
 - Modify: `configs/evaluation/release-gates.yaml`
 - Create: `src/lafla_ai_core/evaluation/uncertainty.py`
@@ -126,8 +126,8 @@
 **Files:**
 - Modify: `src/lafla_ai_core/colab/run_plan.py`
 - Modify: `src/lafla_ai_core/cli/colab_plan.py`
-- Create: `scripts/colab_start_tpu_v5e_100m.sh`
-- Create: `notebooks/lafla_colab_tpu_100m_training.ipynb`
+- Create: `scripts/colab/start_tpu_v5e_100m.sh`
+- Create: `notebooks/colab/lafla_tpu_100m_training.ipynb`
 - Modify: `src/lafla_ai_core/training/runner.py`
 - Test: `tests/unit/test_colab_run_plan.py`
 - Test: `tests/unit/test_training_curriculum.py`

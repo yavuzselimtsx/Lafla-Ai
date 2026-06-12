@@ -28,8 +28,8 @@ from lafla_ai_core.post_training.seed_profile import (
 from lafla_ai_core.post_training.thinking_sft import ThinkingSftRecord
 
 
-DEFAULT_SAFETY_OUTPUT_PATH = Path("datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl")
-DEFAULT_SAFETY_MANIFEST_PATH = Path("datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.manifest.json")
+DEFAULT_SAFETY_OUTPUT_PATH = Path("datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl")
+DEFAULT_SAFETY_MANIFEST_PATH = Path("datasets/post_training/safety/manifests/lafla-100m-safety-jailbreak-seed-10k.manifest.json")
 DEFAULT_SAFETY_COUNT = 10_000
 
 

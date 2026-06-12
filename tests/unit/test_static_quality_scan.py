@@ -60,6 +60,19 @@ class StaticQualityScanTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertEqual(report.findings[0].rule, "hf_cache_disabled")
 
+    def test_default_rules_reject_post_training_dataset_in_pretraining_argument(self):
+        report = run_static_scan(
+            files={
+                "scripts/colab/bad.sh": (
+                    "python -m lafla_ai_core.cli.train_pretrain "
+                    "--data-jsonl datasets/post_training/thinking/jsonl/bad.jsonl\n"
+                )
+            }
+        )
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.findings[0].rule, "post_training_dataset_in_pretraining")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -42,7 +42,7 @@ def save_training_checkpoint(
     tmp.mkdir(parents=True)
     _write_json(tmp / "config.json", {"model": asdict(model_config)})
     _write_json(tmp / "trainer_state.json", state)
-    _save_tensor_payload(model.state_dict(), tmp / "model.pt")
+    _save_tensor_payload(_checkpoint_state_dict(model), tmp / "model.pt")
     _save_tensor_payload(optimizer.state_dict(), tmp / "optimizer.pt")
     _save_tensor_payload(_capture_rng_state(), tmp / "rng.pt")
     _write_json(tmp / "READY.json", {"ready": True, "format": "lafla-ai-core-checkpoint-v1"})
@@ -60,7 +60,7 @@ def load_training_checkpoint(
 
     path = Path(checkpoint_dir)
     validate_checkpoint_directory(path)
-    model.load_state_dict(torch.load(path / "model.pt", map_location=map_location))
+    _load_model_state_dict(model, torch.load(path / "model.pt", map_location=map_location))
     if optimizer is not None:
         optimizer.load_state_dict(torch.load(path / "optimizer.pt", map_location=map_location))
     rng_path = path / "rng.pt"
@@ -70,6 +70,33 @@ def load_training_checkpoint(
     if not state_path.exists():
         raise FileNotFoundError(f"trainer_state eksik: {state_path}")
     return json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def _checkpoint_state_dict(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    """DataParallel/DDP sarmalini kaldirip temiz model state_dict'i dondurur."""
+
+    return _unwrap_parallel_model(model).state_dict()
+
+
+def _load_model_state_dict(model: torch.nn.Module, state_dict: dict[str, torch.Tensor]) -> None:
+    """Eski DataParallel prefix'li checkpoint'leri de plain modele yukler."""
+
+    target = _unwrap_parallel_model(model)
+    if _has_module_prefix(state_dict):
+        target.load_state_dict({key.removeprefix("module."): value for key, value in state_dict.items()})
+        return
+    target.load_state_dict(state_dict)
+
+
+def _unwrap_parallel_model(model: torch.nn.Module) -> torch.nn.Module:
+    module = getattr(model, "module", None)
+    if isinstance(module, torch.nn.Module):
+        return module
+    return model
+
+
+def _has_module_prefix(state_dict: dict[str, torch.Tensor]) -> bool:
+    return bool(state_dict) and all(key.startswith("module.") for key in state_dict)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

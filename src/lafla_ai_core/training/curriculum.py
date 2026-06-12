@@ -41,5 +41,11 @@ def resolve_curriculum_stage(config: TrainingConfig, cumulative_tokens: int) -> 
     )
 
 
-def tokens_per_optimizer_step(config: TrainingConfig, stage: CurriculumStage) -> int:
-    return stage.sequence_length * config.micro_batch_size * config.gradient_accumulation_steps
+def tokens_per_optimizer_step(
+    config: TrainingConfig,
+    stage: CurriculumStage,
+    *,
+    micro_batch_size: int | None = None,
+) -> int:
+    active_micro_batch_size = config.micro_batch_size if micro_batch_size is None else micro_batch_size
+    return stage.sequence_length * active_micro_batch_size * config.gradient_accumulation_steps

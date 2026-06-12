@@ -9,8 +9,8 @@
     "count": 20000,
     "data_kind": "synthetic_sft_seed",
     "dataset_version": "lafla-100m-synthetic-thinking-chat-seed-2026-06",
-    "manifest_path": "datasets/synthetic/lafla-100m-thinking-chat-seed-20k.manifest.json",
-    "output_path": "datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl",
+    "manifest_path": "datasets/post_training/thinking/manifests/lafla-100m-thinking-chat-seed-20k.manifest.json",
+    "output_path": "datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl",
     "manifest": {
       "allowed_for_post_training": true,
       "allowed_for_pretraining": false,
@@ -195,8 +195,8 @@
     "count": 10000,
     "data_kind": "synthetic_safety_sft_seed",
     "dataset_version": "lafla-100m-synthetic-safety-jailbreak-seed-2026-06",
-    "manifest_path": "datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.manifest.json",
-    "output_path": "datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl",
+    "manifest_path": "datasets/post_training/safety/manifests/lafla-100m-safety-jailbreak-seed-10k.manifest.json",
+    "output_path": "datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl",
     "manifest": {
       "allowed_for_post_training": true,
       "allowed_for_pretraining": false,

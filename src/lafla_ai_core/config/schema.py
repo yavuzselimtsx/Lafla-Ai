@@ -215,6 +215,7 @@ class TrainingConfig:
     curriculum_token_boundaries: tuple[int, ...] = ()
     target_tokens: int = 0
     checkpoint_every_tokens: int = 0
+    data_parallel: str = "off"
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "TrainingConfig":
@@ -247,6 +248,7 @@ class TrainingConfig:
             ),
             target_tokens=int(training.get("target_tokens", 0)),
             checkpoint_every_tokens=int(training.get("checkpoint_every_tokens", 0)),
+            data_parallel=str(training.get("data_parallel", "off")),
         )
 
     def validate(self) -> None:
@@ -259,9 +261,13 @@ class TrainingConfig:
         _require(self.precision in {"fp16", "bf16", "fp32"}, "desteklenmeyen precision")
         _require(self.optimizer in {"adamw", "adamw8bit", "lion"}, "desteklenmeyen optimizer")
         _require(self.accelerator in {"auto", "cuda", "xla", "cpu"}, "desteklenmeyen accelerator")
+        _require(self.data_parallel in {"off", "auto", "on"}, "desteklenmeyen data_parallel")
         if self.accelerator == "xla":
             _require(self.optimizer == "adamw", "TPU/XLA icin optimizer=adamw olmali")
             _require(self.precision in {"bf16", "fp32"}, "TPU/XLA icin bf16 veya fp32 kullanilmali")
+            _require(self.data_parallel != "on", "data_parallel=on XLA/TPU icin kullanilamaz")
+        if self.accelerator == "cpu":
+            _require(self.data_parallel != "on", "data_parallel=on CPU icin kullanilamaz")
         _require(0.0 < self.learning_rate <= 0.01, "learning_rate guvenli aralik disinda")
         _require(0.0 <= self.min_learning_rate <= self.learning_rate, "min_learning_rate hatali")
         _require(0.0 <= self.weight_decay <= 1.0, "weight_decay guvenli aralik disinda")

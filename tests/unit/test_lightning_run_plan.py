@@ -13,8 +13,8 @@ class LightningRunPlanTest(unittest.TestCase):
 
         joined = "\n".join(plan.commands)
         self.assertIn("configs/model/lafla-380m-thinking.yaml", joined)
-        self.assertIn("configs/training/lightning-h200-380m-50000.yaml", joined)
-        self.assertIn("configs/data/lafla-model-identity-380m.jsonl", joined)
+        self.assertIn("configs/training/lightning/lightning-h200-380m-50000.yaml", joined)
+        self.assertIn("configs/data/identity/lafla-model-identity-380m.jsonl", joined)
         self.assertIn("configs/runtime/desktop-phone-fp16-380m.yaml", joined)
         self.assertIn("--model-name lafla-380m-thinking", joined)
         self.assertIn("lafla-380m-thinking-h200-50000-step-run.tar.gz", joined)

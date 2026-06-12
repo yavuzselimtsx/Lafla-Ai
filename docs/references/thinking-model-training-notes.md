@@ -64,7 +64,7 @@ Zorunlu:
 
 ```bash
 PYTHONPATH=src python -m lafla_ai_core.cli.quality_scan --root .
-PYTHONPATH=src python -m lafla_ai_core.cli.preflight configs/model/lafla-400m-thinking.yaml configs/training/colab-t4-400m-4000.yaml configs/tokenizer/turkish-thinking-bpe.yaml configs/runtime/desktop-cpu-4bit.yaml configs/post_training/lafla-thinking-sft.yaml
+PYTHONPATH=src python -m lafla_ai_core.cli.preflight configs/model/lafla-400m-thinking.yaml configs/training/colab/colab-t4-400m-4000.yaml configs/tokenizer/turkish-thinking-bpe.yaml configs/runtime/desktop-cpu-4bit.yaml configs/post_training/lafla-thinking-sft.yaml
 ```
 
 Thinking SFT verisi varsa:
@@ -90,8 +90,8 @@ dosyası kullanılmalıdır.
 
 100M Colab launcher bu iki seed'i post-training girdisi olarak doğrular:
 
-- `datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl`
-- `datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl`
+- `datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl`
+- `datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl`
 
 Bu kapılar geçmeden uzun Colab koşusu başlatılmaz.
 

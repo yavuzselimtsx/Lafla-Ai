@@ -82,6 +82,11 @@ DEFAULT_RULES = (
     StaticScanRule("hf_cache_disabled", '"use_cache": False', ("src/lafla_ai_core/export/",)),
     StaticScanRule("hf_cache_disabled", "use_cache=False", ("src/lafla_ai_core/export/",)),
     StaticScanRule("hf_cache_disabled", "use_cache: false", ("src/lafla_ai_core/export/",)),
+    StaticScanRule(
+        "post_training_dataset_in_pretraining",
+        "--data-jsonl datasets/post_training/",
+        ("src/", "scripts/", "notebooks/"),
+    ),
 )
 
 

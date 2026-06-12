@@ -2,7 +2,7 @@
 
 ## 1. Zorunlu Girdiler
 
-- `configs/data/lafla-100m-source-plan.json` aday kaynak ve hedef oran planıdır.
+- `configs/data/source-plans/lafla-100m-source-plan.json` aday kaynak ve hedef oran planıdır.
 - Gerçek shard manifesti URL, snapshot, lisans, hash, filtre raporu ve token
   sayısını taşımalıdır.
 - `review_required` kaynaklar insan incelemesi tamamlanmadan indirilemez veya
@@ -26,7 +26,7 @@ Hedef başlangıç karışımı:
 PYTHONPATH=src python -m lafla_ai_core.cli.quality_scan --root .
 PYTHONPATH=src python -m lafla_ai_core.cli.preflight \
   configs/model/lafla-100m-thinking.yaml \
-  configs/training/colab-tpu-v5e-100m.yaml \
+  configs/training/colab/colab-tpu-v5e-100m.yaml \
   configs/tokenizer/turkish-german-thinking-bpe.yaml \
   configs/runtime/desktop-i3-int8-100m.yaml \
   configs/post_training/lafla-thinking-sft.yaml
@@ -48,7 +48,7 @@ olduktan sonra:
 
 ```bash
 cd /content/LaflaAi-Core
-bash scripts/colab_start_tpu_v5e_100m.sh
+bash scripts/colab/start_tpu_v5e_100m.sh
 ```
 
 Token curriculum:
@@ -77,15 +77,15 @@ Tek Colab oturumu tamamlanmış eğitim kabul edilmez.
 
 Mevcut yerel SFT çekirdekleri:
 
-- `configs/data/lafla-model-identity-100m.jsonl`: küçük model kimliği ve
+- `configs/data/identity/lafla-model-identity-100m.jsonl`: küçük model kimliği ve
   belirsizlik davranışı sohbet çekirdeği.
 - `configs/post_training/lafla-100m-seed-profile.json`: sentetik seedlerin tek
   model/dil/davranış profil kaynağı. 200M veya yeni dil denemelerinde kod
   değiştirilmez; ayrı profil dosyası verilir.
-- `datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl`: 20.000 satırlık
+- `datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl`: 20.000 satırlık
   sentetik sohbet/thinking seed. Manifesti `allowed_for_pretraining: false`
   taşır; gerçek corpus yerine değil, kısa SFT kalibrasyonu için kullanılır.
-- `datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl`: 10.000
+- `datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl`: 10.000
   satırlık güvenlik, jailbreak direnci, sistem prompt sızdırma reddi, özel veri
   sınırı, tool izni ve halüsinasyon reddi seed'i. Manifesti yine
   `allowed_for_pretraining: false` taşır.
@@ -94,18 +94,22 @@ Doğrulama:
 
 ```bash
 PYTHONPATH=src python -m lafla_ai_core.cli.validate_thinking_sft \
-  --input datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl \
-  --report artifacts/reports/lafla-100m-thinking-chat-seed-20k.validation.json \
+  --input datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl \
+  --report artifacts/reports/validation/lafla-100m-thinking-chat-seed-20k.validation.json \
   --max-thinking-chars 900
 PYTHONPATH=src python -m lafla_ai_core.cli.validate_thinking_sft \
-  --input datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl \
-  --report artifacts/reports/lafla-100m-safety-jailbreak-seed-10k.validation.json \
+  --input datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl \
+  --report artifacts/reports/validation/lafla-100m-safety-jailbreak-seed-10k.validation.json \
   --max-thinking-chars 1200
 ```
 
 Colab launcher bu iki dosyayı post-training girdisi olarak doğrular ve rapora
 yazar. Bunlar base pretraining `--data-jsonl` karışımına sokulmaz; SFT aşaması
 assistant loss maskesiyle çalışmalıdır.
+
+Ek koruma: `train_pretrain` CLI ve runner, `datasets/post_training/` altindan
+gelen girdiyi fail-closed reddeder. `quality_scan` da script/notebook/src icinde
+`--data-jsonl datasets/post_training/` kalibini hata sayar.
 
 ## 6. Release
 

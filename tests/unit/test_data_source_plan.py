@@ -5,7 +5,7 @@ from lafla_ai_core.config.loader import load_mapping
 
 class DataSourcePlanTest(unittest.TestCase):
     def test_100m_source_plan_matches_language_and_capability_mix(self):
-        plan = load_mapping("configs/data/lafla-100m-source-plan.json")["source_plan"]
+        plan = load_mapping("configs/data/source-plans/lafla-100m-source-plan.json")["source_plan"]
         sources = plan["sources"]
         self.assertEqual(plan["dataset_version"], "lafla-100m-thinking-realdata-2026-06")
         self.assertAlmostEqual(sum(float(source["weight"]) for source in sources), 1.0)
@@ -28,7 +28,7 @@ class DataSourcePlanTest(unittest.TestCase):
         self.assertTrue(all(source["primary_eligible"] is False for source in risky))
 
     def test_source_plan_weights_sum_to_one_and_ids_are_unique(self):
-        plan = load_mapping("configs/data/lafla-400m-source-plan.json")["source_plan"]
+        plan = load_mapping("configs/data/source-plans/lafla-400m-source-plan.json")["source_plan"]
         self.assertEqual(plan["dataset_version"], "lafla-400m-thinking-2026-06")
         self.assertEqual(plan["target_steps"], 4000)
         sources = plan["sources"]
@@ -37,7 +37,7 @@ class DataSourcePlanTest(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
 
     def test_380m_source_plan_covers_core_capability_domains(self):
-        plan = load_mapping("configs/data/lafla-380m-source-plan.json")["source_plan"]
+        plan = load_mapping("configs/data/source-plans/lafla-380m-source-plan.json")["source_plan"]
         self.assertEqual(plan["dataset_version"], "lafla-380m-thinking-realdata-2026-06")
         self.assertEqual(plan["target_steps"], 50_000)
         sources = plan["sources"]
@@ -50,7 +50,7 @@ class DataSourcePlanTest(unittest.TestCase):
         self.assertTrue(all(source["data_kind"] == "real_or_owned" for source in sources))
 
     def test_review_required_sources_are_not_marked_primary(self):
-        plan = load_mapping("configs/data/lafla-400m-source-plan.json")["source_plan"]
+        plan = load_mapping("configs/data/source-plans/lafla-400m-source-plan.json")["source_plan"]
         risky = [source for source in plan["sources"] if "review" in source["status"]]
         self.assertTrue(risky)
         self.assertTrue(all(source["status"] != "primary" for source in risky))

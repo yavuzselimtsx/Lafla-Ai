@@ -49,8 +49,8 @@ class SyntheticChatSeedTest(unittest.TestCase):
         self.assertTrue(manifest_payload["allowed_for_post_training"])
 
     def test_default_paths_are_training_dataset_locations(self):
-        self.assertEqual(DEFAULT_OUTPUT_PATH.as_posix(), "datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl")
-        self.assertEqual(DEFAULT_MANIFEST_PATH.as_posix(), "datasets/synthetic/lafla-100m-thinking-chat-seed-20k.manifest.json")
+        self.assertEqual(DEFAULT_OUTPUT_PATH.as_posix(), "datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl")
+        self.assertEqual(DEFAULT_MANIFEST_PATH.as_posix(), "datasets/post_training/thinking/manifests/lafla-100m-thinking-chat-seed-20k.manifest.json")
 
     def test_generate_helper_writes_twenty_thousand_records_by_default(self):
         with tempfile.TemporaryDirectory() as temp_dir:

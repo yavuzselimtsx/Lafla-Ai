@@ -11,9 +11,9 @@ T4 is not appropriate for this run.
 ## Base Training
 
 - Model: `configs/model/lafla-380m-thinking.yaml`
-- Training: `configs/training/lightning-h200-380m-50000.yaml`
+- Training: `configs/training/lightning/lightning-h200-380m-50000.yaml`
 - Runtime target: `configs/runtime/desktop-phone-fp16-380m.yaml`
-- Identity seed: `configs/data/lafla-model-identity-380m.jsonl`
+- Identity seed: `configs/data/identity/lafla-model-identity-380m.jsonl`
 - Real-data target for the first H200 run: 2.2B characters, minimum 900M.
 - Checkpoints: every 250 steps, keep last 4.
 

@@ -18,6 +18,7 @@ from typing import Sequence
 
 from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
+from lafla_ai_core.data.routing import assert_pretraining_inputs
 from lafla_ai_core.training.runner import TrainingPaths, run_pretraining
 
 
@@ -41,6 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _require_existing(args.tokenizer_path, "tokenizer")
         for data_path in args.data_jsonl:
             _require_existing(data_path, "data_jsonl")
+        assert_pretraining_inputs(tuple(args.data_jsonl))
     paths = TrainingPaths(
         data_jsonl=tuple(args.data_jsonl),
         tokenizer_path=args.tokenizer_path,

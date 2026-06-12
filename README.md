@@ -38,7 +38,7 @@ $env:PYTHONPATH='src'
 python -m lafla_ai_core.cli.quality_scan --root .
 python -m lafla_ai_core.cli.preflight `
   configs/model/lafla-100m-thinking.yaml `
-  configs/training/colab-tpu-v5e-100m.yaml `
+  configs/training/colab/colab-tpu-v5e-100m.yaml `
   configs/tokenizer/turkish-german-thinking-bpe.yaml `
   configs/runtime/desktop-i3-int8-100m.yaml `
   configs/post_training/lafla-thinking-sft.yaml
@@ -48,7 +48,7 @@ python -m unittest discover -s tests -p 'test_*.py' -v
 
 ## Sentetik SFT Seedleri
 
-Küçük identity dosyası `configs/data/lafla-model-identity-100m.jsonl` altında
+Küçük identity dosyası `configs/data/identity/lafla-model-identity-100m.jsonl` altında
 vardır. Ek sentetik SFT seedleri `configs/post_training/lafla-100m-seed-profile.json`
 profilinden tekrar üretilebilir; model kimliği, dil odağı ve davranış metinleri
 Python koduna gömülmez.
@@ -60,12 +60,12 @@ python -m lafla_ai_core.cli.generate_synthetic_chat_seed `
 python -m lafla_ai_core.cli.generate_safety_jailbreak_seed `
   --profile configs\post_training\lafla-100m-seed-profile.json
 python -m lafla_ai_core.cli.validate_thinking_sft `
-  --input datasets\synthetic\lafla-100m-thinking-chat-seed-20k.jsonl `
-  --report artifacts\reports\lafla-100m-thinking-chat-seed-20k.validation.json `
+  --input datasets\post_training\thinking\jsonl\lafla-100m-thinking-chat-seed-20k.jsonl `
+  --report artifacts\reports\validation\lafla-100m-thinking-chat-seed-20k.validation.json `
   --max-thinking-chars 900
 python -m lafla_ai_core.cli.validate_thinking_sft `
-  --input datasets\synthetic\lafla-100m-safety-jailbreak-seed-10k.jsonl `
-  --report artifacts\reports\lafla-100m-safety-jailbreak-seed-10k.validation.json `
+  --input datasets\post_training\safety\jsonl\lafla-100m-safety-jailbreak-seed-10k.jsonl `
+  --report artifacts\reports\validation\lafla-100m-safety-jailbreak-seed-10k.validation.json `
   --max-thinking-chars 1200
 ```
 
@@ -88,20 +88,20 @@ Launcher sahte/bootstrap veri üretmez ve eksik dosyada kapanır:
 
 ```bash
 cd /content/LaflaAi-Core
-bash scripts/colab_start_tpu_v5e_100m.sh
+bash scripts/colab/start_tpu_v5e_100m.sh
 ```
 
 Notebook:
 
 ```text
-notebooks/lafla_colab_tpu_100m_training.ipynb
+notebooks/colab/lafla_tpu_100m_training.ipynb
 ```
 
 Resume:
 
 ```bash
 export RESUME_FROM=/content/LaflaAI100M/checkpoints/lafla-step-010000
-bash scripts/colab_start_tpu_v5e_100m.sh
+bash scripts/colab/start_tpu_v5e_100m.sh
 ```
 
 Curriculum toplam görülen token sayısına göre 2K, 4K, 8K, 12K, 16K ve 20K

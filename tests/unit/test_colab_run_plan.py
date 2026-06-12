@@ -18,9 +18,9 @@ class ColabRunPlanTest(unittest.TestCase):
         self.assertIn("PJRT_DEVICE=TPU", joined)
         self.assertIn("requirements/colab-tpu.txt", joined)
         self.assertIn("configs/model/lafla-100m-thinking.yaml", joined)
-        self.assertIn("configs/training/colab-tpu-v5e-100m.yaml", joined)
+        self.assertIn("configs/training/colab/colab-tpu-v5e-100m.yaml", joined)
         self.assertIn("--model-name lafla-100m-thinking", joined)
-        self.assertIn("configs/data/lafla-model-identity-100m.jsonl", joined)
+        self.assertIn("configs/data/identity/lafla-model-identity-100m.jsonl", joined)
         self.assertIn("configs/post_training/lafla-thinking-sft.yaml", joined)
         self.assertIn("lafla_ai_core.cli.data_audit", joined)
         self.assertIn("pip install -r requirements/colab-tpu.txt", joined)
@@ -79,13 +79,13 @@ class ColabRunPlanTest(unittest.TestCase):
         plan = build_colab_run_plan(ColabPaths(), "/content/data.jsonl")
         joined = "\n".join(plan.commands)
 
-        self.assertIn("datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl", joined)
-        self.assertIn("datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl", joined)
+        self.assertIn("datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl", joined)
+        self.assertIn("datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl", joined)
         self.assertIn("thinking-sft-audit-001.json", joined)
         self.assertIn("thinking-sft-audit-002.json", joined)
         self.assertLess(joined.index("lafla-100m-thinking-chat-seed-20k.jsonl"), joined.index("train_pretrain"))
-        self.assertNotIn("--data-jsonl datasets/synthetic/lafla-100m-thinking-chat-seed-20k.jsonl", joined)
-        self.assertNotIn("--data-jsonl datasets/synthetic/lafla-100m-safety-jailbreak-seed-10k.jsonl", joined)
+        self.assertNotIn("--data-jsonl datasets/post_training/thinking/jsonl/lafla-100m-thinking-chat-seed-20k.jsonl", joined)
+        self.assertNotIn("--data-jsonl datasets/post_training/safety/jsonl/lafla-100m-safety-jailbreak-seed-10k.jsonl", joined)
 
     def test_profile_can_override_default_sft_seed_files(self):
         profile = ColabTrainingProfile(
@@ -99,8 +99,8 @@ class ColabRunPlanTest(unittest.TestCase):
         self.assertNotIn("lafla-100m-thinking-chat-seed-20k.jsonl", joined)
 
     def test_100m_launcher_and_notebook_require_real_data_without_bootstrap_generation(self):
-        script = Path("scripts/colab_start_tpu_v5e_100m.sh").read_text(encoding="utf-8")
-        notebook = json.loads(Path("notebooks/lafla_colab_tpu_100m_training.ipynb").read_text(encoding="utf-8"))
+        script = Path("scripts/colab/start_tpu_v5e_100m.sh").read_text(encoding="utf-8")
+        notebook = json.loads(Path("notebooks/colab/lafla_tpu_100m_training.ipynb").read_text(encoding="utf-8"))
         notebook_text = json.dumps(notebook, ensure_ascii=False)
 
         self.assertIn("configs/model/lafla-100m-thinking.yaml", script)
@@ -110,7 +110,7 @@ class ColabRunPlanTest(unittest.TestCase):
         self.assertIn("lafla-100m-safety-jailbreak-seed-10k.jsonl", script)
         self.assertIn("validate_thinking_sft", script)
         self.assertNotIn("lightning_prepare_real_data.py", script)
-        self.assertIn("colab_start_tpu_v5e_100m.sh", notebook_text)
+        self.assertIn("scripts/colab/start_tpu_v5e_100m.sh", notebook_text)
         self.assertIn("veri_manifesti.json", notebook_text)
 
 
