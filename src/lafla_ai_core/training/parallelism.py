@@ -19,6 +19,15 @@ class ParallelismDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class BatchGeometry:
+    """Cihaz sayisindan cozulmus optimizer batch geometrisi."""
+
+    global_micro_batch_size: int
+    gradient_accumulation_steps: int
+    sequences_per_optimizer_step: int
+
+
 def resolve_data_parallel(data_parallel: str, device_type: str, cuda_device_count: int) -> ParallelismDecision:
     """Config ve cihaz durumundan DataParallel kararini uretir."""
 
@@ -39,3 +48,51 @@ def effective_micro_batch_size(configured_micro_batch_size: int, decision: Paral
     if not decision.enabled:
         return configured_micro_batch_size
     return max(configured_micro_batch_size, decision.cuda_device_count)
+
+
+def resolve_batch_geometry(
+    *,
+    configured_micro_batch_size: int,
+    configured_gradient_accumulation_steps: int,
+    cuda_micro_batch_size_per_device: int,
+    target_sequences_per_optimizer_step: int,
+    decision: ParallelismDecision,
+) -> BatchGeometry:
+    """CUDA hiz profilini toplam optimizer batch'ini koruyarak cozer."""
+
+    if configured_gradient_accumulation_steps < 1:
+        raise ValueError("configured_gradient_accumulation_steps pozitif olmali")
+    tuned = cuda_micro_batch_size_per_device > 0 or target_sequences_per_optimizer_step > 0
+    if not tuned:
+        micro_batch = effective_micro_batch_size(configured_micro_batch_size, decision)
+        accumulation = configured_gradient_accumulation_steps
+        return BatchGeometry(micro_batch, accumulation, micro_batch * accumulation)
+    if cuda_micro_batch_size_per_device < 1 or target_sequences_per_optimizer_step < 1:
+        raise ValueError("cuda batch tuning alanlari birlikte pozitif olmali")
+    if decision.cuda_device_count < 1:
+        micro_batch = configured_micro_batch_size
+        accumulation = configured_gradient_accumulation_steps
+        return BatchGeometry(micro_batch, accumulation, micro_batch * accumulation)
+    active_cuda_devices = decision.cuda_device_count if decision.enabled else 1
+    micro_batch = cuda_micro_batch_size_per_device * active_cuda_devices
+    if target_sequences_per_optimizer_step % micro_batch != 0:
+        raise ValueError("target_sequences_per_optimizer_step global micro batch'e tam bolunmeli")
+    accumulation = target_sequences_per_optimizer_step // micro_batch
+    if accumulation < 1:
+        raise ValueError("cozulmus gradient accumulation pozitif olmali")
+    return BatchGeometry(micro_batch, accumulation, micro_batch * accumulation)
+
+
+def resolve_gradient_checkpointing(
+    *,
+    model_checkpointing_enabled: bool,
+    minimum_sequence_length: int,
+    active_sequence_length: int,
+) -> bool:
+    """Aktif context uzunlugu icin activation checkpointing kararini verir."""
+
+    if not model_checkpointing_enabled:
+        return False
+    if minimum_sequence_length <= 0:
+        return True
+    return active_sequence_length >= minimum_sequence_length

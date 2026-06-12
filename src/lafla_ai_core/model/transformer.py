@@ -23,6 +23,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised on machines w
     raise ModuleNotFoundError("lafla_ai_core.model.transformer icin torch kurulu olmali") from exc
 
 from lafla_ai_core.config.schema import ModelConfig, RopeScalingConfig
+from lafla_ai_core.model.attention_policy import can_use_full_window_sdpa
 
 
 @dataclass(frozen=True)
@@ -177,6 +178,20 @@ class GroupedQueryAttention(nn.Module):
         if self.sliding_window <= 0:
             raise ValueError("local attention icin sliding_window pozitif olmali")
         seq_len = q.shape[-2]
+        if can_use_full_window_sdpa(
+            attention_mode=self.attention_mode,
+            sequence_length=seq_len,
+            sliding_window=self.sliding_window,
+            device_type=q.device.type,
+        ):
+            return F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=None,
+                dropout_p=self.dropout_p if self.training else 0.0,
+                is_causal=True,
+            )
         chunk_size = min(512, self.sliding_window, seq_len)
         scale = q.shape[-1] ** -0.5
         outputs: list[torch.Tensor] = []
@@ -254,6 +269,7 @@ class LaflaDecoderModel(nn.Module):
         )
         self.final_norm = RmsNorm(config.hidden_size, config.norm_eps)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.gradient_checkpointing_enabled = config.gradient_checkpointing
         if config.tie_word_embeddings:
             self.lm_head.weight = self.token_embeddings.weight
         self.apply(self._init_weights)
@@ -265,6 +281,11 @@ class LaflaDecoderModel(nn.Module):
             nn.init.normal_(block.attn.out_proj.weight, mean=0.0, std=residual_std)
             nn.init.normal_(block.ffn.down_proj.weight, mean=0.0, std=residual_std)
 
+    def set_gradient_checkpointing(self, enabled: bool) -> None:
+        """Runtime politikasini model config siniri icinde uygular."""
+
+        self.gradient_checkpointing_enabled = self.config.gradient_checkpointing and enabled
+
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor | None = None) -> ModelOutput:
         """Input tokenlarindan logits ve opsiyonel next-token loss uretir."""
 
@@ -274,7 +295,7 @@ class LaflaDecoderModel(nn.Module):
             raise ValueError("input_ids context_length sinirini asti")
         x = self.dropout(self.token_embeddings(input_ids))
         for block in self.blocks:
-            if self.config.gradient_checkpointing and self.training:
+            if self.gradient_checkpointing_enabled and self.training:
                 x = checkpoint_decoder_block(block, x)
             else:
                 x = block(x)

@@ -33,6 +33,17 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertEqual(runtime.peak_rss_limit_mib, 700)
         self.assertEqual(runtime.max_concurrent_generations, 1)
 
+    def test_kaggle_100m_profile_preserves_optimizer_batch_with_safe_speed_tuning(self):
+        training = TrainingConfig.from_mapping(
+            load_mapping("configs/training/kaggle/kaggle-gpu-100m.yaml")
+        )
+
+        training.validate()
+
+        self.assertEqual(training.cuda_micro_batch_size_per_device, 2)
+        self.assertEqual(training.target_sequences_per_optimizer_step, 32)
+        self.assertEqual(training.gradient_checkpointing_min_sequence_length, 4096)
+
     def test_model_config_loads_and_validates(self):
         path = Path("configs/model/lafla-400m-thinking.yaml")
         config = ModelConfig.from_mapping(load_mapping(path))

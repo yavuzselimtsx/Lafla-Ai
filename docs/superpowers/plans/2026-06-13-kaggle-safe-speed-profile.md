@@ -32,7 +32,7 @@
 - Modify: `tests/unit/test_model_transformer.py`
 - Modify: `tests/unit/test_training_parallelism.py`
 
-- [ ] Add failing tests proving checkpointing can be disabled at runtime and that the threshold policy returns false for 2048/4096 and true for 8192.
+- [ ] Add failing tests proving checkpointing can be disabled at runtime and that the threshold policy returns false for 2048 and true for 4096.
 - [ ] Run the focused tests and verify the failures describe missing runtime policy.
 - [ ] Add `gradient_checkpointing_min_sequence_length`, defaulting to zero for backward-compatible behavior.
 - [ ] Add a model runtime toggle and update it whenever the curriculum stage changes.
@@ -56,7 +56,7 @@
 - Modify: `docs/operations/kaggle-gpu-100m.md`
 - Modify: `tests/unit/test_config_preflight.py`
 
-- [ ] Configure per-device micro batch 2, target optimizer batch 32, and checkpointing threshold 8192.
+- [ ] Configure per-device micro batch 2, target optimizer batch 32, and checkpointing threshold 4096.
 - [ ] Document expected T4 x2 and single-GPU resolved values and the OOM rollback procedure.
 - [ ] Run preflight and focused config tests.
 
@@ -70,4 +70,3 @@
 - [ ] Run `python -m compileall -q src tests scripts`.
 - [ ] Commit the verified change and push it to GitHub `main`.
 - [ ] Provide Kaggle checkpoint-stop, pull, and resume commands.
-

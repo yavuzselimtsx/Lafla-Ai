@@ -30,9 +30,9 @@ path preserves causal visibility and dropout behavior.
 
 The model will expose a runtime checkpointing toggle that can only disable a
 feature enabled by the model config. The training profile will disable
-checkpointing below 8192 tokens and automatically re-enable it when the
-curriculum reaches 8192 tokens. This changes activation storage only, not model
-weights or checkpoint compatibility.
+checkpointing at 2048 tokens and automatically re-enable it when the curriculum
+reaches 4096 tokens. This changes activation storage only, not model weights or
+checkpoint compatibility.
 
 ### Preserved Optimizer Batch
 
@@ -64,4 +64,3 @@ Existing 100M checkpoints cannot be narrowed without a separate distillation or
 pruning project. It would reduce weight memory and compute, but would also
 reduce multilingual capacity, reasoning quality, and long-context robustness.
 The current 100M run therefore remains the recommended path.
-

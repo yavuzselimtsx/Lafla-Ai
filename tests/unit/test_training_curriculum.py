@@ -30,6 +30,20 @@ class TrainingCurriculumTest(unittest.TestCase):
             8192 * config.micro_batch_size * config.gradient_accumulation_steps,
         )
 
+    def test_optimizer_step_token_count_accepts_resolved_batch_geometry(self):
+        config = TrainingConfig.from_mapping(load_mapping("configs/training/kaggle/kaggle-gpu-100m.yaml"))
+        stage = resolve_curriculum_stage(config, 0)
+
+        self.assertEqual(
+            tokens_per_optimizer_step(
+                config,
+                stage,
+                micro_batch_size=4,
+                gradient_accumulation_steps=8,
+            ),
+            2048 * 4 * 8,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,12 @@ from lafla_ai_core.model.transformer import LaflaDecoderModel
 from lafla_ai_core.training.checkpoint_policy import CheckpointPolicy, retention_victims, should_save_checkpoint
 from lafla_ai_core.training.curriculum import CurriculumStage, resolve_curriculum_stage, tokens_per_optimizer_step
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
-from lafla_ai_core.training.parallelism import ParallelismDecision, effective_micro_batch_size, resolve_data_parallel
+from lafla_ai_core.training.parallelism import (
+    ParallelismDecision,
+    resolve_batch_geometry,
+    resolve_data_parallel,
+    resolve_gradient_checkpointing,
+)
 from lafla_ai_core.training.stability import StabilityMonitor
 
 
@@ -144,7 +149,15 @@ def run_pretraining(
     base_model = LaflaDecoderModel(model_config).to(device)
     train_model = _TrainingLossModule(base_model)
     parallel_decision = _resolve_data_parallel(training_config, device)
-    active_micro_batch_size = effective_micro_batch_size(training_config.micro_batch_size, parallel_decision)
+    batch_geometry = resolve_batch_geometry(
+        configured_micro_batch_size=training_config.micro_batch_size,
+        configured_gradient_accumulation_steps=training_config.gradient_accumulation_steps,
+        cuda_micro_batch_size_per_device=training_config.cuda_micro_batch_size_per_device,
+        target_sequences_per_optimizer_step=training_config.target_sequences_per_optimizer_step,
+        decision=parallel_decision,
+    )
+    active_micro_batch_size = batch_geometry.global_micro_batch_size
+    active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
     if parallel_decision.enabled:
         train_model = torch.nn.DataParallel(train_model)
     optimizer = build_optimizer(train_model, training_config)
@@ -157,6 +170,12 @@ def run_pretraining(
         cumulative_tokens = int(state.get("cumulative_tokens", 0))
 
     active_stage = resolve_curriculum_stage(training_config, cumulative_tokens)
+    active_gradient_checkpointing = resolve_gradient_checkpointing(
+        model_checkpointing_enabled=model_config.gradient_checkpointing,
+        minimum_sequence_length=training_config.gradient_checkpointing_min_sequence_length,
+        active_sequence_length=active_stage.sequence_length,
+    )
+    base_model.set_gradient_checkpointing(active_gradient_checkpointing)
     iterator = _build_training_iterator(
         model_config,
         training_config,
@@ -186,6 +205,10 @@ def run_pretraining(
                 "cuda_device_count": parallel_decision.cuda_device_count,
                 "configured_micro_batch_size": training_config.micro_batch_size,
                 "effective_micro_batch_size": active_micro_batch_size,
+                "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
+                "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
+                "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                "gradient_checkpointing": active_gradient_checkpointing,
             },
         )
 
@@ -197,6 +220,12 @@ def run_pretraining(
             stage = resolve_curriculum_stage(training_config, cumulative_tokens)
             if stage.index != active_stage.index:
                 active_stage = stage
+                active_gradient_checkpointing = resolve_gradient_checkpointing(
+                    model_checkpointing_enabled=model_config.gradient_checkpointing,
+                    minimum_sequence_length=training_config.gradient_checkpointing_min_sequence_length,
+                    active_sequence_length=active_stage.sequence_length,
+                )
+                base_model.set_gradient_checkpointing(active_gradient_checkpointing)
                 iterator = _build_training_iterator(
                     model_config,
                     training_config,
@@ -216,6 +245,10 @@ def run_pretraining(
                         "sequence_length": active_stage.sequence_length,
                         "configured_micro_batch_size": training_config.micro_batch_size,
                         "effective_micro_batch_size": active_micro_batch_size,
+                        "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
+                        "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
+                        "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                        "gradient_checkpointing": active_gradient_checkpointing,
                     },
                 )
             lr = cosine_with_warmup_lr(
@@ -228,7 +261,7 @@ def run_pretraining(
             for group in optimizer.param_groups:
                 group["lr"] = lr
             accumulated_loss = 0.0
-            for micro_step in range(training_config.gradient_accumulation_steps):
+            for micro_step in range(active_gradient_accumulation_steps):
                 batch = next(iterator).to(device)
                 labels = batch.clone()
                 with _autocast_context(device, dtype):
@@ -238,7 +271,7 @@ def run_pretraining(
                         raise RuntimeError(
                             f"finite olmayan loss: step={step}, micro_step={micro_step}, loss={float(step_loss.detach().cpu())}"
                         )
-                    loss = step_loss / training_config.gradient_accumulation_steps
+                    loss = step_loss / active_gradient_accumulation_steps
                 accumulated_loss += float(step_loss.detach().cpu())
                 scaler.scale(loss).backward()
                 if xla_sync is not None:
@@ -255,12 +288,13 @@ def run_pretraining(
                 xla_sync()
             optimizer.zero_grad(set_to_none=True)
 
-            average_loss = accumulated_loss / training_config.gradient_accumulation_steps
+            average_loss = accumulated_loss / active_gradient_accumulation_steps
             previous_tokens = cumulative_tokens
             cumulative_tokens += tokens_per_optimizer_step(
                 training_config,
                 active_stage,
                 micro_batch_size=active_micro_batch_size,
+                gradient_accumulation_steps=active_gradient_accumulation_steps,
             )
             stability_observation = stability.observe(step=step, loss=average_loss, grad_norm=grad_norm)
             if step % training_config.log_every == 0 or step == 1:
@@ -282,6 +316,10 @@ def run_pretraining(
                         "cuda_device_count": parallel_decision.cuda_device_count,
                         "configured_micro_batch_size": training_config.micro_batch_size,
                         "effective_micro_batch_size": active_micro_batch_size,
+                        "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
+                        "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
+                        "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                        "gradient_checkpointing": active_gradient_checkpointing,
                         "tokenizer_vocab_size": tokenizer_vocab_size,
                         "cumulative_tokens": cumulative_tokens,
                         "curriculum_stage": active_stage.index,
@@ -460,7 +498,7 @@ def _select_training_device(config: TrainingConfig) -> tuple[torch.device, Calla
     return torch.device("cpu"), None
 
 
-def _resolve_data_parallel(config: TrainingConfig, device: torch.device) -> DataParallelDecision:
+def _resolve_data_parallel(config: TrainingConfig, device: torch.device) -> ParallelismDecision:
     """CUDA coklu GPU kararini verir; tek cihaz/CPU/TPU durumunda sessizce tek cihaza duser."""
 
     cuda_device_count = torch.cuda.device_count() if device.type == "cuda" else 0

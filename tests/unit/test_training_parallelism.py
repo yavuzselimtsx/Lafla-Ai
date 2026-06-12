@@ -4,7 +4,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
-from lafla_ai_core.training.parallelism import ParallelismDecision, effective_micro_batch_size
+from lafla_ai_core.training.parallelism import (
+    ParallelismDecision,
+    effective_micro_batch_size,
+    resolve_batch_geometry,
+    resolve_gradient_checkpointing,
+)
 
 try:
     import torch
@@ -105,6 +110,82 @@ class TrainingParallelismConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(effective_micro_batch_size(configured_micro_batch_size=1, decision=decision), 1)
+
+    def test_safe_speed_geometry_keeps_32_sequences_on_two_cuda_devices(self):
+        decision = ParallelismDecision(
+            enabled=True,
+            mode="data_parallel",
+            cuda_device_count=2,
+            reason="multi_cuda_available",
+        )
+
+        geometry = resolve_batch_geometry(
+            configured_micro_batch_size=1,
+            configured_gradient_accumulation_steps=16,
+            cuda_micro_batch_size_per_device=2,
+            target_sequences_per_optimizer_step=32,
+            decision=decision,
+        )
+
+        self.assertEqual(geometry.global_micro_batch_size, 4)
+        self.assertEqual(geometry.gradient_accumulation_steps, 8)
+        self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+
+    def test_safe_speed_geometry_keeps_32_sequences_on_single_cuda_device(self):
+        decision = ParallelismDecision(
+            enabled=False,
+            mode="single_device",
+            cuda_device_count=1,
+            reason="less_than_two_cuda_devices",
+        )
+
+        geometry = resolve_batch_geometry(
+            configured_micro_batch_size=1,
+            configured_gradient_accumulation_steps=16,
+            cuda_micro_batch_size_per_device=2,
+            target_sequences_per_optimizer_step=32,
+            decision=decision,
+        )
+
+        self.assertEqual(geometry.global_micro_batch_size, 2)
+        self.assertEqual(geometry.gradient_accumulation_steps, 16)
+        self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+
+    def test_batch_geometry_preserves_existing_profiles_when_tuning_is_disabled(self):
+        decision = ParallelismDecision(
+            enabled=True,
+            mode="data_parallel",
+            cuda_device_count=2,
+            reason="multi_cuda_available",
+        )
+
+        geometry = resolve_batch_geometry(
+            configured_micro_batch_size=1,
+            configured_gradient_accumulation_steps=16,
+            cuda_micro_batch_size_per_device=0,
+            target_sequences_per_optimizer_step=0,
+            decision=decision,
+        )
+
+        self.assertEqual(geometry.global_micro_batch_size, 2)
+        self.assertEqual(geometry.gradient_accumulation_steps, 16)
+        self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+
+    def test_gradient_checkpointing_starts_at_configured_sequence_threshold(self):
+        self.assertFalse(
+            resolve_gradient_checkpointing(
+                model_checkpointing_enabled=True,
+                minimum_sequence_length=4096,
+                active_sequence_length=2048,
+            )
+        )
+        self.assertTrue(
+            resolve_gradient_checkpointing(
+                model_checkpointing_enabled=True,
+                minimum_sequence_length=4096,
+                active_sequence_length=4096,
+            )
+        )
 
 
 @unittest.skipIf(torch is None, "torch kurulu degil")

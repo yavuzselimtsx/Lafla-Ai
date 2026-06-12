@@ -23,6 +23,9 @@ training:
   checkpoint_every_tokens: 25000000
   micro_batch_size: 1
   gradient_accumulation_steps: 16
+  cuda_micro_batch_size_per_device: 2
+  target_sequences_per_optimizer_step: 32
+  gradient_checkpointing_min_sequence_length: 4096
   precision: fp16
   optimizer: adamw
   learning_rate: 0.00024

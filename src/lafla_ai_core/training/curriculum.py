@@ -46,6 +46,12 @@ def tokens_per_optimizer_step(
     stage: CurriculumStage,
     *,
     micro_batch_size: int | None = None,
+    gradient_accumulation_steps: int | None = None,
 ) -> int:
     active_micro_batch_size = config.micro_batch_size if micro_batch_size is None else micro_batch_size
-    return stage.sequence_length * active_micro_batch_size * config.gradient_accumulation_steps
+    active_accumulation_steps = (
+        config.gradient_accumulation_steps
+        if gradient_accumulation_steps is None
+        else gradient_accumulation_steps
+    )
+    return stage.sequence_length * active_micro_batch_size * active_accumulation_steps

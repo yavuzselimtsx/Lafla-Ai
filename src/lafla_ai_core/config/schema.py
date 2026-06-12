@@ -216,6 +216,9 @@ class TrainingConfig:
     target_tokens: int = 0
     checkpoint_every_tokens: int = 0
     data_parallel: str = "off"
+    cuda_micro_batch_size_per_device: int = 0
+    target_sequences_per_optimizer_step: int = 0
+    gradient_checkpointing_min_sequence_length: int = 0
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "TrainingConfig":
@@ -249,6 +252,11 @@ class TrainingConfig:
             target_tokens=int(training.get("target_tokens", 0)),
             checkpoint_every_tokens=int(training.get("checkpoint_every_tokens", 0)),
             data_parallel=str(training.get("data_parallel", "off")),
+            cuda_micro_batch_size_per_device=int(training.get("cuda_micro_batch_size_per_device", 0)),
+            target_sequences_per_optimizer_step=int(training.get("target_sequences_per_optimizer_step", 0)),
+            gradient_checkpointing_min_sequence_length=int(
+                training.get("gradient_checkpointing_min_sequence_length", 0)
+            ),
         )
 
     def validate(self) -> None:
@@ -303,6 +311,19 @@ class TrainingConfig:
             )
         _require(self.target_tokens >= 0, "target_tokens negatif olamaz")
         _require(self.checkpoint_every_tokens >= 0, "checkpoint_every_tokens negatif olamaz")
+        _require(self.cuda_micro_batch_size_per_device >= 0, "cuda_micro_batch_size_per_device negatif olamaz")
+        _require(
+            self.target_sequences_per_optimizer_step >= 0,
+            "target_sequences_per_optimizer_step negatif olamaz",
+        )
+        _require(
+            (self.cuda_micro_batch_size_per_device == 0) == (self.target_sequences_per_optimizer_step == 0),
+            "cuda batch tuning alanlari birlikte etkinlestirilmeli",
+        )
+        _require(
+            self.gradient_checkpointing_min_sequence_length >= 0,
+            "gradient_checkpointing_min_sequence_length negatif olamaz",
+        )
 
 
 @dataclass(frozen=True)
