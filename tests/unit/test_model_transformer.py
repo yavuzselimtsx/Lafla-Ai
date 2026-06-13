@@ -133,6 +133,83 @@ class TransformerModelTest(unittest.TestCase):
         self.assertEqual(tuple(output.shape), tuple(q.shape))
         sdpa.assert_called_once()
 
+    def test_native_gqa_keeps_kv_heads_unexpanded_for_sdpa(self):
+        assert torch is not None
+        assert GroupedQueryAttention is not None
+        config = ModelConfig(
+            name="tiny-native-gqa",
+            family="decoder-only",
+            parameter_target=100_000_000,
+            vocab_size=128,
+            context_length=128,
+            hidden_size=8,
+            intermediate_size=16,
+            num_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            activation="swiglu",
+            norm="rmsnorm",
+            rope=True,
+            qk_norm=False,
+            gradient_checkpointing=False,
+        )
+        attention = GroupedQueryAttention(config)
+        attention.set_native_gqa(True)
+        x = torch.ones((1, 4, 8))
+
+        def fake_sdpa(q, k, v, **kwargs):
+            self.assertEqual(k.shape[1], 1)
+            self.assertEqual(v.shape[1], 1)
+            self.assertTrue(kwargs["enable_gqa"])
+            return torch.zeros_like(q)
+
+        with patch(
+            "lafla_ai_core.model.transformer.F.scaled_dot_product_attention",
+            side_effect=fake_sdpa,
+        ) as sdpa:
+            output = attention(x)
+
+        self.assertEqual(tuple(output.shape), tuple(x.shape))
+        sdpa.assert_called_once()
+
+    def test_explicit_gqa_fallback_expands_kv_heads(self):
+        assert torch is not None
+        assert GroupedQueryAttention is not None
+        config = ModelConfig(
+            name="tiny-expanded-gqa",
+            family="decoder-only",
+            parameter_target=100_000_000,
+            vocab_size=128,
+            context_length=128,
+            hidden_size=8,
+            intermediate_size=16,
+            num_layers=1,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            activation="swiglu",
+            norm="rmsnorm",
+            rope=True,
+            qk_norm=False,
+            gradient_checkpointing=False,
+        )
+        attention = GroupedQueryAttention(config)
+        x = torch.ones((1, 4, 8))
+
+        def fake_sdpa(q, k, v, **kwargs):
+            self.assertEqual(k.shape[1], 2)
+            self.assertEqual(v.shape[1], 2)
+            self.assertNotIn("enable_gqa", kwargs)
+            return torch.zeros_like(q)
+
+        with patch(
+            "lafla_ai_core.model.transformer.F.scaled_dot_product_attention",
+            side_effect=fake_sdpa,
+        ) as sdpa:
+            output = attention(x)
+
+        self.assertEqual(tuple(output.shape), tuple(x.shape))
+        sdpa.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

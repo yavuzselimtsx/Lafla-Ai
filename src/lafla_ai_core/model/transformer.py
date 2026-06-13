@@ -142,6 +142,12 @@ class GroupedQueryAttention(nn.Module):
         self.k_norm = RmsNorm(self.head_dim, config.norm_eps) if config.qk_norm else nn.Identity()
         self.rotary = RotaryEmbedding(self.head_dim, config.rope_theta, config.rope_scaling)
         self.dropout_p = config.dropout
+        self.native_gqa_enabled = False
+
+    def set_native_gqa(self, enabled: bool) -> None:
+        """SDPA native GQA yolunu capability probe sonucuna gore acar."""
+
+        self.native_gqa_enabled = enabled and self.repeat_factor > 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch, seq_len, hidden = x.shape
@@ -153,14 +159,38 @@ class GroupedQueryAttention(nn.Module):
         cos, sin = self.rotary(seq_len, x.device, q.dtype)
         q = apply_rotary(q, cos, sin)
         k = apply_rotary(k, cos, sin)
-        if self.repeat_factor > 1:
-            k = k.repeat_interleave(self.repeat_factor, dim=1)
-            v = v.repeat_interleave(self.repeat_factor, dim=1)
-        if self.attention_mode == "local":
+        use_native_gqa = self.native_gqa_enabled and self.repeat_factor > 1
+        full_window_local = can_use_full_window_sdpa(
+            attention_mode=self.attention_mode,
+            sequence_length=seq_len,
+            sliding_window=self.sliding_window,
+            device_type=x.device.type,
+        )
+        if self.attention_mode == "local" and use_native_gqa and full_window_local:
+            attn = self._native_gqa_attention(q, k, v)
+            if attn is None:
+                k, v = self._expanded_kv(k, v)
+                attn = self._chunked_local_attention(q, k, v)
+        elif self.attention_mode == "local":
+            k, v = self._expanded_kv(k, v)
             attn = self._chunked_local_attention(q, k, v)
         elif x.device.type == "xla":
+            k, v = self._expanded_kv(k, v)
             attn = self._xla_global_attention(q, k, v)
+        elif use_native_gqa:
+            attn = self._native_gqa_attention(q, k, v)
+            if attn is None:
+                k, v = self._expanded_kv(k, v)
+                attn = F.scaled_dot_product_attention(
+                    q,
+                    k,
+                    v,
+                    attn_mask=None,
+                    dropout_p=self.dropout_p if self.training else 0.0,
+                    is_causal=True,
+                )
         else:
+            k, v = self._expanded_kv(k, v)
             attn = F.scaled_dot_product_attention(
                 q,
                 k,
@@ -171,6 +201,53 @@ class GroupedQueryAttention(nn.Module):
             )
         attn = attn.transpose(1, 2).contiguous().view(batch, seq_len, hidden)
         return self.out_proj(attn)
+
+    def _expanded_kv(
+        self,
+        k: torch.Tensor,
+        v: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.repeat_factor <= 1:
+            return k, v
+        return (
+            k.repeat_interleave(self.repeat_factor, dim=1),
+            v.repeat_interleave(self.repeat_factor, dim=1),
+        )
+
+    def _native_gqa_attention(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+    ) -> torch.Tensor | None:
+        try:
+            return F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=None,
+                dropout_p=self.dropout_p if self.training else 0.0,
+                is_causal=True,
+                enable_gqa=True,
+            )
+        except TypeError:
+            self.native_gqa_enabled = False
+            return None
+        except RuntimeError as exc:
+            message = str(exc).lower()
+            if not any(
+                marker in message
+                for marker in (
+                    "grouped query attention",
+                    "enable_gqa",
+                    "no available kernel",
+                    "not supported",
+                    "unsupported",
+                )
+            ):
+                raise
+            self.native_gqa_enabled = False
+            return None
 
     def _chunked_local_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         """Tam NxN maske ayirmadan yerel causal attention hesaplar."""
@@ -285,6 +362,12 @@ class LaflaDecoderModel(nn.Module):
         """Runtime politikasini model config siniri icinde uygular."""
 
         self.gradient_checkpointing_enabled = self.config.gradient_checkpointing and enabled
+
+    def set_native_gqa(self, enabled: bool) -> None:
+        """Tum attention katmanlarina ayni capability kararini uygular."""
+
+        for block in self.blocks:
+            block.attn.set_native_gqa(enabled)
 
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor | None = None) -> ModelOutput:
         """Input tokenlarindan logits ve opsiyonel next-token loss uretir."""

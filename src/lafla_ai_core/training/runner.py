@@ -222,6 +222,13 @@ def _run_pretraining_impl(
             )
 
     base_model = LaflaDecoderModel(model_config).to(device)
+    native_gqa_enabled = _probe_native_gqa(
+        model_config,
+        device=device,
+        dtype=dtype,
+        requested=training_config.prefer_native_gqa,
+    )
+    base_model.set_native_gqa(native_gqa_enabled)
     parallel_decision = _resolve_parallelism(training_config, device, runtime)
     batch_geometry = resolve_batch_geometry(
         configured_micro_batch_size=training_config.micro_batch_size,
@@ -233,7 +240,8 @@ def _run_pretraining_impl(
     active_process_micro_batch_size = batch_geometry.per_process_micro_batch_size
     active_global_micro_batch_size = batch_geometry.global_micro_batch_size
     active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
-    optimizer = build_optimizer(base_model, training_config)
+    optimizer = build_optimizer(base_model, training_config, device=device)
+    optimizer_mode = str(getattr(optimizer, "_lafla_optimizer_mode", training_config.optimizer))
     start_step = 0
     cumulative_tokens = 0
     if paths.resume_from:
@@ -269,6 +277,7 @@ def _run_pretraining_impl(
         micro_batch_size=active_process_micro_batch_size,
         rank=runtime.rank,
         world_size=runtime.world_size,
+        pin_memory=training_config.pin_memory and device.type == "cuda",
     )
     scaler = _build_grad_scaler(device, training_config.precision)
     policy = CheckpointPolicy(training_config.save_every, training_config.keep_last_checkpoints)
@@ -297,6 +306,9 @@ def _run_pretraining_impl(
                 "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                 "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
                 "gradient_checkpointing": active_gradient_checkpointing,
+                "optimizer_mode": optimizer_mode,
+                "native_gqa": native_gqa_enabled,
+                "pin_memory": training_config.pin_memory and device.type == "cuda",
             },
         )
 
@@ -324,6 +336,7 @@ def _run_pretraining_impl(
                     micro_batch_size=active_process_micro_batch_size,
                     rank=runtime.rank,
                     world_size=runtime.world_size,
+                    pin_memory=training_config.pin_memory and device.type == "cuda",
                 )
                 if runtime.is_primary:
                     _append_health(
@@ -341,6 +354,9 @@ def _run_pretraining_impl(
                             "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                             "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
                             "gradient_checkpointing": active_gradient_checkpointing,
+                            "optimizer_mode": optimizer_mode,
+                            "native_gqa": native_gqa_enabled,
+                            "pin_memory": training_config.pin_memory and device.type == "cuda",
                         },
                     )
             lr = cosine_with_warmup_lr(
@@ -354,7 +370,10 @@ def _run_pretraining_impl(
                 group["lr"] = lr
             accumulated_loss = 0.0
             for micro_step in range(active_gradient_accumulation_steps):
-                batch = next(iterator).to(device)
+                batch = next(iterator).to(
+                    device,
+                    non_blocking=training_config.pin_memory and device.type == "cuda",
+                )
                 with gradient_sync_context(
                     train_model,
                     micro_step=micro_step,
@@ -423,6 +442,9 @@ def _run_pretraining_impl(
                         "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                         "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
                         "gradient_checkpointing": active_gradient_checkpointing,
+                        "optimizer_mode": optimizer_mode,
+                        "native_gqa": native_gqa_enabled,
+                        "pin_memory": training_config.pin_memory and device.type == "cuda",
                         "tokenizer_vocab_size": tokenizer_vocab_size,
                         "cumulative_tokens": cumulative_tokens,
                         "curriculum_stage": active_stage.index,
@@ -477,12 +499,36 @@ def _run_pretraining_impl(
     )
 
 
-def build_optimizer(model: torch.nn.Module, config: TrainingConfig) -> torch.optim.Optimizer:
+def build_optimizer(
+    model: torch.nn.Module,
+    config: TrainingConfig,
+    *,
+    device: torch.device | None = None,
+) -> torch.optim.Optimizer:
     """Config'e gore optimizer kurar."""
 
     param_groups = _optimizer_param_groups(model, config.weight_decay)
     if config.optimizer == "adamw":
-        return torch.optim.AdamW(param_groups, lr=config.learning_rate)
+        if config.prefer_fused_optimizer and device is not None and device.type == "cuda":
+            try:
+                optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate, fused=True)
+            except TypeError:
+                optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
+            except RuntimeError as exc:
+                message = str(exc).lower()
+                if "fused" not in message or not any(
+                    marker in message for marker in ("unsupported", "not supported", "requires")
+                ):
+                    raise
+                optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
+            else:
+                _mark_optimizer_mode(optimizer, "fused_adamw")
+                return optimizer
+            _mark_optimizer_mode(optimizer, "adamw_fallback")
+            return optimizer
+        optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
+        _mark_optimizer_mode(optimizer, "adamw")
+        return optimizer
     if config.optimizer == "adamw8bit":
         try:
             import bitsandbytes as bnb  # type: ignore
@@ -527,6 +573,7 @@ def _build_training_iterator(
     micro_batch_size: int | None = None,
     rank: int = 0,
     world_size: int = 1,
+    pin_memory: bool = False,
 ):
     dataset: IterableDataset[torch.Tensor]
     if smoke:
@@ -546,7 +593,11 @@ def _build_training_iterator(
             rank=rank,
             world_size=world_size,
         )
-    loader = DataLoader(dataset, batch_size=training_config.micro_batch_size if micro_batch_size is None else micro_batch_size)
+    loader = DataLoader(
+        dataset,
+        batch_size=training_config.micro_batch_size if micro_batch_size is None else micro_batch_size,
+        pin_memory=pin_memory,
+    )
     return iter(loader)
 
 
@@ -574,6 +625,52 @@ def _optimizer_param_groups(model: torch.nn.Module, weight_decay: float) -> list
     if not groups:
         raise ValueError("optimizer icin egitilebilir parametre yok")
     return groups
+
+
+def _mark_optimizer_mode(optimizer: object, mode: str) -> None:
+    try:
+        setattr(optimizer, "_lafla_optimizer_mode", mode)
+    except (AttributeError, TypeError):
+        pass
+
+
+def _probe_native_gqa(
+    model_config: ModelConfig,
+    *,
+    device: torch.device,
+    dtype: torch.dtype | None,
+    requested: bool,
+) -> bool:
+    """Aktif PyTorch/CUDA SDPA backend'inde native GQA destegini bir kez dener."""
+
+    if not requested or device.type != "cuda" or model_config.num_attention_heads == model_config.num_key_value_heads:
+        return False
+    probe_dtype = torch.float32 if dtype is None else dtype
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+    try:
+        with torch.no_grad():
+            q = torch.zeros(
+                (1, model_config.num_attention_heads, 2, head_dim),
+                device=device,
+                dtype=probe_dtype,
+            )
+            k = torch.zeros(
+                (1, model_config.num_key_value_heads, 2, head_dim),
+                device=device,
+                dtype=probe_dtype,
+            )
+            v = torch.zeros_like(k)
+            output = torch.nn.functional.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                dropout_p=0.0,
+                is_causal=True,
+                enable_gqa=True,
+            )
+        return output.shape == q.shape
+    except (TypeError, RuntimeError):
+        return False
 
 
 def _apply_retention(checkpoint_root: Path, keep_last: int) -> None:

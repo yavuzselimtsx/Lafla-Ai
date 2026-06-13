@@ -19,9 +19,10 @@ from lafla_ai_core.training.parallelism import (
 try:
     import torch
     from lafla_ai_core.model.checkpoint_io import load_training_checkpoint, save_training_checkpoint
-    from lafla_ai_core.training.runner import _resolve_data_parallel
+    from lafla_ai_core.training.runner import _resolve_data_parallel, build_optimizer
 except ModuleNotFoundError:
     torch = None
+    build_optimizer = None
     load_training_checkpoint = None
     save_training_checkpoint = None
     _resolve_data_parallel = None
@@ -295,6 +296,22 @@ class TrainingParallelismDecisionTest(unittest.TestCase):
         self.assertFalse(decision.enabled)
         self.assertEqual(decision.mode, "single_device")
         self.assertEqual(decision.cuda_device_count, 1)
+
+    def test_fused_adamw_capability_error_falls_back_to_standard_adamw(self):
+        assert build_optimizer is not None
+        model = torch.nn.Linear(4, 2)
+        config = _training_config(prefer_fused_optimizer=True)
+        fallback_optimizer = object()
+
+        with patch(
+            "lafla_ai_core.training.runner.torch.optim.AdamW",
+            side_effect=[TypeError("fused argument is unsupported"), fallback_optimizer],
+        ) as adamw:
+            optimizer = build_optimizer(model, config, device=torch.device("cuda"))
+
+        self.assertIs(optimizer, fallback_optimizer)
+        self.assertTrue(adamw.call_args_list[0].kwargs["fused"])
+        self.assertNotIn("fused", adamw.call_args_list[1].kwargs)
 
 
 @unittest.skipIf(torch is None, "torch kurulu degil")
