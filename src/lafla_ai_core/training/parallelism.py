@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
-from typing import Iterable, Iterator, TypeVar
+from typing import ContextManager, Iterable, Iterator, TypeVar
 
 
 T = TypeVar("T")
@@ -169,6 +170,25 @@ def should_sync_gradients(micro_step: int, accumulation_steps: int) -> bool:
     if not 0 <= micro_step < accumulation_steps:
         raise ValueError("micro_step accumulation araliginda olmali")
     return micro_step == accumulation_steps - 1
+
+
+def gradient_sync_context(
+    model,
+    *,
+    micro_step: int,
+    accumulation_steps: int,
+    final_microstep_only: bool,
+    distributed: bool,
+) -> ContextManager[None]:
+    """DDP gradient reduction'ini son accumulation turuna erteler."""
+
+    sync_now = should_sync_gradients(micro_step, accumulation_steps)
+    if distributed and final_microstep_only and not sync_now:
+        no_sync = getattr(model, "no_sync", None)
+        if not callable(no_sync):
+            raise TypeError("distributed model no_sync() saglamali")
+        return no_sync()
+    return nullcontext()
 
 
 def iter_rank_positions(source: Iterable[T], *, rank: int, world_size: int) -> Iterator[T]:

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -7,6 +8,7 @@ from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
 from lafla_ai_core.training.parallelism import (
     ParallelismDecision,
     effective_micro_batch_size,
+    gradient_sync_context,
     iter_rank_positions,
     resolve_batch_geometry,
     resolve_gradient_checkpointing,
@@ -149,6 +151,29 @@ class TrainingParallelismConfigTest(unittest.TestCase):
         self.assertFalse(should_sync_gradients(0, 8))
         self.assertFalse(should_sync_gradients(6, 8))
         self.assertTrue(should_sync_gradients(7, 8))
+
+    def test_ddp_no_sync_is_used_for_only_non_final_microsteps(self):
+        class RecordingModel:
+            def __init__(self) -> None:
+                self.no_sync_calls = 0
+
+            @contextmanager
+            def no_sync(self):
+                self.no_sync_calls += 1
+                yield
+
+        model = RecordingModel()
+        for micro_step in range(8):
+            with gradient_sync_context(
+                model,
+                micro_step=micro_step,
+                accumulation_steps=8,
+                final_microstep_only=True,
+                distributed=True,
+            ):
+                pass
+
+        self.assertEqual(model.no_sync_calls, 7)
 
     def test_effective_micro_batch_uses_both_cuda_devices_when_data_parallel_is_enabled(self):
         decision = ParallelismDecision(

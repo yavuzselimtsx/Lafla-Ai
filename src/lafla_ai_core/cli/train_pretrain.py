@@ -19,6 +19,7 @@ from typing import Sequence
 from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
 from lafla_ai_core.data.routing import assert_pretraining_inputs
+from lafla_ai_core.training.distributed import read_distributed_environment
 from lafla_ai_core.training.runner import TrainingPaths, run_pretraining
 
 
@@ -51,7 +52,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         resume_from=args.resume_from,
     )
     summary = run_pretraining(model_config, training_config, paths, smoke=args.smoke)
-    print(json.dumps(asdict(summary), ensure_ascii=False, indent=2, sort_keys=True))
+    if read_distributed_environment().is_primary:
+        print(json.dumps(asdict(summary), ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

@@ -34,12 +34,16 @@ from lafla_ai_core.model.checkpoint_io import load_training_checkpoint, save_tra
 from lafla_ai_core.model.transformer import LaflaDecoderModel
 from lafla_ai_core.training.checkpoint_policy import CheckpointPolicy, retention_victims, should_save_checkpoint
 from lafla_ai_core.training.curriculum import CurriculumStage, resolve_curriculum_stage, tokens_per_optimizer_step
+from lafla_ai_core.training.distributed import DistributedRuntime, initialize_distributed
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
 from lafla_ai_core.training.parallelism import (
     ParallelismDecision,
+    gradient_sync_context,
+    iter_rank_positions,
     resolve_batch_geometry,
     resolve_data_parallel,
     resolve_gradient_checkpointing,
+    resolve_parallelism,
 )
 from lafla_ai_core.training.stability import StabilityMonitor
 
@@ -69,33 +73,69 @@ class TrainingSummary:
 class JsonlTokenBlockDataset(IterableDataset[torch.Tensor]):
     """JSONL kaynaklardan sonsuz token blok akisi uretir."""
 
-    def __init__(self, paths: Sequence[str], tokenizer_path: str, sequence_length: int, eos_id: int) -> None:
+    def __init__(
+        self,
+        paths: Sequence[str],
+        tokenizer_path: str,
+        sequence_length: int,
+        eos_id: int,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> None:
         super().__init__()
         self.paths = tuple(paths)
         self.tokenizer_path = tokenizer_path
         self.sequence_length = sequence_length
         self.eos_id = eos_id
+        self.rank = rank
+        self.world_size = world_size
 
     def __iter__(self) -> Iterable[torch.Tensor]:
         tokenizer = TokenizersCodec(self.tokenizer_path)
         while True:
-            for block in iter_packed_token_blocks(iter_jsonl_texts(self.paths), tokenizer, self.sequence_length, self.eos_id):
+            blocks = iter_packed_token_blocks(
+                iter_jsonl_texts(self.paths),
+                tokenizer,
+                self.sequence_length,
+                self.eos_id,
+            )
+            for block in iter_rank_positions(blocks, rank=self.rank, world_size=self.world_size):
                 yield torch.tensor(block, dtype=torch.long)
 
 
 class SmokeTokenBlockDataset(IterableDataset[torch.Tensor]):
     """Ayni training yolunu hizli denemek icin sentetik token bloklari."""
 
-    def __init__(self, vocab_size: int, sequence_length: int, seed: int) -> None:
+    def __init__(
+        self,
+        vocab_size: int,
+        sequence_length: int,
+        seed: int,
+        *,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
         self.sequence_length = sequence_length
         self.seed = seed
+        self.rank = rank
+        self.world_size = world_size
 
     def __iter__(self) -> Iterable[torch.Tensor]:
         generator = torch.Generator().manual_seed(self.seed)
-        while True:
-            yield torch.randint(0, self.vocab_size, (self.sequence_length,), generator=generator, dtype=torch.long)
+        def source() -> Iterable[torch.Tensor]:
+            while True:
+                yield torch.randint(
+                    0,
+                    self.vocab_size,
+                    (self.sequence_length,),
+                    generator=generator,
+                    dtype=torch.long,
+                )
+
+        yield from iter_rank_positions(source(), rank=self.rank, world_size=self.world_size)
 
 
 class _TrainingLossModule(torch.nn.Module):
@@ -123,14 +163,49 @@ def run_pretraining(
 
     model_config.validate()
     training_config.validate()
+    selected_device, xla_sync = _select_training_device(training_config)
+    runtime = initialize_distributed(
+        configured_backend=training_config.distributed_backend,
+        device_type=selected_device.type,
+        torch_module=torch,
+    )
+    if runtime.is_distributed:
+        selected_device = torch.device("cuda", runtime.local_rank)
+    try:
+        return _run_pretraining_impl(
+            model_config,
+            training_config,
+            paths,
+            smoke=smoke,
+            device=selected_device,
+            xla_sync=xla_sync,
+            runtime=runtime,
+        )
+    finally:
+        runtime.close()
+
+
+def _run_pretraining_impl(
+    model_config: ModelConfig,
+    training_config: TrainingConfig,
+    paths: TrainingPaths,
+    *,
+    smoke: bool,
+    device: torch.device,
+    xla_sync: Callable[[], None] | None,
+    runtime: DistributedRuntime,
+) -> TrainingSummary:
+    """Cihaz ve distributed runtime cozuldukten sonra egitim dongusunu kosar."""
+
     _set_seed(training_config.seed)
-    device, xla_sync = _select_training_device(training_config)
     dtype = _autocast_dtype(training_config.precision)
     checkpoint_root = Path(paths.checkpoint_dir)
-    checkpoint_root.mkdir(parents=True, exist_ok=True)
     health_log = Path(paths.health_log_path)
-    health_log.parent.mkdir(parents=True, exist_ok=True)
-    _ensure_free_space(checkpoint_root, training_config.checkpoint_min_free_gb)
+    if runtime.is_primary:
+        checkpoint_root.mkdir(parents=True, exist_ok=True)
+        health_log.parent.mkdir(parents=True, exist_ok=True)
+        _ensure_free_space(checkpoint_root, training_config.checkpoint_min_free_gb)
+    runtime.barrier()
 
     eos_id = 0
     tokenizer_vocab_size = None
@@ -147,8 +222,7 @@ def run_pretraining(
             )
 
     base_model = LaflaDecoderModel(model_config).to(device)
-    train_model = _TrainingLossModule(base_model)
-    parallel_decision = _resolve_data_parallel(training_config, device)
+    parallel_decision = _resolve_parallelism(training_config, device, runtime)
     batch_geometry = resolve_batch_geometry(
         configured_micro_batch_size=training_config.micro_batch_size,
         configured_gradient_accumulation_steps=training_config.gradient_accumulation_steps,
@@ -156,11 +230,10 @@ def run_pretraining(
         target_sequences_per_optimizer_step=training_config.target_sequences_per_optimizer_step,
         decision=parallel_decision,
     )
-    active_micro_batch_size = batch_geometry.global_micro_batch_size
+    active_process_micro_batch_size = batch_geometry.per_process_micro_batch_size
+    active_global_micro_batch_size = batch_geometry.global_micro_batch_size
     active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
-    if parallel_decision.enabled:
-        train_model = torch.nn.DataParallel(train_model)
-    optimizer = build_optimizer(train_model, training_config)
+    optimizer = build_optimizer(base_model, training_config)
     start_step = 0
     cumulative_tokens = 0
     if paths.resume_from:
@@ -168,6 +241,16 @@ def run_pretraining(
         _move_optimizer_state(optimizer, device)
         start_step = int(state.get("step", 0))
         cumulative_tokens = int(state.get("cumulative_tokens", 0))
+    train_model: torch.nn.Module = _TrainingLossModule(base_model)
+    if parallel_decision.distributed:
+        train_model = torch.nn.parallel.DistributedDataParallel(
+            train_model,
+            device_ids=[runtime.local_rank],
+            output_device=runtime.local_rank,
+            broadcast_buffers=False,
+        )
+    elif parallel_decision.enabled:
+        train_model = torch.nn.DataParallel(train_model)
 
     active_stage = resolve_curriculum_stage(training_config, cumulative_tokens)
     active_gradient_checkpointing = resolve_gradient_checkpointing(
@@ -183,14 +266,16 @@ def run_pretraining(
         active_stage,
         eos_id=eos_id,
         smoke=smoke,
-        micro_batch_size=active_micro_batch_size,
+        micro_batch_size=active_process_micro_batch_size,
+        rank=runtime.rank,
+        world_size=runtime.world_size,
     )
     scaler = _build_grad_scaler(device, training_config.precision)
     policy = CheckpointPolicy(training_config.save_every, training_config.keep_last_checkpoints)
     stability = StabilityMonitor()
     started = time.time()
     optimizer.zero_grad(set_to_none=True)
-    if start_step > 0:
+    if start_step > 0 and runtime.is_primary:
         _append_health(
             health_log,
             {
@@ -203,8 +288,11 @@ def run_pretraining(
                 "sequence_length": active_stage.sequence_length,
                 "parallelism": parallel_decision.mode,
                 "cuda_device_count": parallel_decision.cuda_device_count,
+                "world_size": runtime.world_size,
+                "rank": runtime.rank,
                 "configured_micro_batch_size": training_config.micro_batch_size,
-                "effective_micro_batch_size": active_micro_batch_size,
+                "per_process_micro_batch_size": active_process_micro_batch_size,
+                "effective_micro_batch_size": active_global_micro_batch_size,
                 "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
                 "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                 "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
@@ -233,24 +321,28 @@ def run_pretraining(
                     active_stage,
                     eos_id=eos_id,
                     smoke=smoke,
-                    micro_batch_size=active_micro_batch_size,
+                    micro_batch_size=active_process_micro_batch_size,
+                    rank=runtime.rank,
+                    world_size=runtime.world_size,
                 )
-                _append_health(
-                    health_log,
-                    {
-                        "step": step,
-                        "event": "curriculum_transition",
-                        "cumulative_tokens": cumulative_tokens,
-                        "curriculum_stage": active_stage.index,
-                        "sequence_length": active_stage.sequence_length,
-                        "configured_micro_batch_size": training_config.micro_batch_size,
-                        "effective_micro_batch_size": active_micro_batch_size,
-                        "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
-                        "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
-                        "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
-                        "gradient_checkpointing": active_gradient_checkpointing,
-                    },
-                )
+                if runtime.is_primary:
+                    _append_health(
+                        health_log,
+                        {
+                            "step": step,
+                            "event": "curriculum_transition",
+                            "cumulative_tokens": cumulative_tokens,
+                            "curriculum_stage": active_stage.index,
+                            "sequence_length": active_stage.sequence_length,
+                            "configured_micro_batch_size": training_config.micro_batch_size,
+                            "per_process_micro_batch_size": active_process_micro_batch_size,
+                            "effective_micro_batch_size": active_global_micro_batch_size,
+                            "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
+                            "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
+                            "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                            "gradient_checkpointing": active_gradient_checkpointing,
+                        },
+                    )
             lr = cosine_with_warmup_lr(
                 step - 1,
                 training_config.max_steps,
@@ -263,17 +355,23 @@ def run_pretraining(
             accumulated_loss = 0.0
             for micro_step in range(active_gradient_accumulation_steps):
                 batch = next(iterator).to(device)
-                labels = batch.clone()
-                with _autocast_context(device, dtype):
-                    raw_loss = train_model(batch, labels=labels)
-                    step_loss = raw_loss.mean()
-                    if not torch.isfinite(step_loss.detach()):
-                        raise RuntimeError(
-                            f"finite olmayan loss: step={step}, micro_step={micro_step}, loss={float(step_loss.detach().cpu())}"
-                        )
-                    loss = step_loss / active_gradient_accumulation_steps
-                accumulated_loss += float(step_loss.detach().cpu())
-                scaler.scale(loss).backward()
+                with gradient_sync_context(
+                    train_model,
+                    micro_step=micro_step,
+                    accumulation_steps=active_gradient_accumulation_steps,
+                    final_microstep_only=training_config.gradient_sync == "final_microstep",
+                    distributed=runtime.is_distributed,
+                ):
+                    with _autocast_context(device, dtype):
+                        raw_loss = train_model(batch, labels=batch)
+                        step_loss = raw_loss.mean()
+                        if not torch.isfinite(step_loss.detach()):
+                            raise RuntimeError(
+                                f"finite olmayan loss: step={step}, micro_step={micro_step}, loss={float(step_loss.detach().cpu())}"
+                            )
+                        loss = step_loss / active_gradient_accumulation_steps
+                    accumulated_loss += float(step_loss.detach().cpu())
+                    scaler.scale(loss).backward()
                 if xla_sync is not None:
                     xla_sync()
             scaler.unscale_(optimizer)
@@ -288,16 +386,18 @@ def run_pretraining(
                 xla_sync()
             optimizer.zero_grad(set_to_none=True)
 
+            accumulated_loss_tensor = torch.tensor(accumulated_loss, device=device, dtype=torch.float32)
+            accumulated_loss = float(runtime.mean_tensor(accumulated_loss_tensor).cpu())
             average_loss = accumulated_loss / active_gradient_accumulation_steps
             previous_tokens = cumulative_tokens
             cumulative_tokens += tokens_per_optimizer_step(
                 training_config,
                 active_stage,
-                micro_batch_size=active_micro_batch_size,
+                micro_batch_size=active_global_micro_batch_size,
                 gradient_accumulation_steps=active_gradient_accumulation_steps,
             )
             stability_observation = stability.observe(step=step, loss=average_loss, grad_norm=grad_norm)
-            if step % training_config.log_every == 0 or step == 1:
+            if runtime.is_primary and (step % training_config.log_every == 0 or step == 1):
                 _append_health(
                     health_log,
                     {
@@ -314,8 +414,11 @@ def run_pretraining(
                         "data_parallel": parallel_decision.enabled,
                         "data_parallel_reason": parallel_decision.reason,
                         "cuda_device_count": parallel_decision.cuda_device_count,
+                        "world_size": runtime.world_size,
+                        "rank": runtime.rank,
                         "configured_micro_batch_size": training_config.micro_batch_size,
-                        "effective_micro_batch_size": active_micro_batch_size,
+                        "per_process_micro_batch_size": active_process_micro_batch_size,
+                        "effective_micro_batch_size": active_global_micro_batch_size,
                         "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
                         "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                         "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
@@ -333,17 +436,20 @@ def run_pretraining(
                 < cumulative_tokens // training_config.checkpoint_every_tokens
             )
             if should_save_checkpoint(step, training_config.max_steps, policy) or token_checkpoint_due:
-                save_training_checkpoint(
+                _save_distributed_checkpoint(
+                    runtime,
                     checkpoint_root / f"lafla-step-{step:06d}",
                     base_model,
                     optimizer,
                     model_config,
                     _trainer_state(step, training_config, smoke, cumulative_tokens, active_stage),
                 )
-                _apply_retention(checkpoint_root, training_config.keep_last_checkpoints)
+                if runtime.is_primary:
+                    _apply_retention(checkpoint_root, training_config.keep_last_checkpoints)
+                runtime.barrier()
             last_completed_step = step
     except KeyboardInterrupt:
-        if last_completed_step > start_step:
+        if runtime.is_primary and last_completed_step > start_step:
             save_training_checkpoint(
                 checkpoint_root / f"lafla-interrupted-step-{last_completed_step:06d}",
                 base_model,
@@ -354,7 +460,8 @@ def run_pretraining(
         raise
 
     final_dir = checkpoint_root / "lafla-final"
-    save_training_checkpoint(
+    _save_distributed_checkpoint(
+        runtime,
         final_dir,
         base_model,
         optimizer,
@@ -418,12 +525,27 @@ def _build_training_iterator(
     eos_id: int,
     smoke: bool,
     micro_batch_size: int | None = None,
+    rank: int = 0,
+    world_size: int = 1,
 ):
     dataset: IterableDataset[torch.Tensor]
     if smoke:
-        dataset = SmokeTokenBlockDataset(model_config.vocab_size, stage.sequence_length, training_config.seed + stage.index)
+        dataset = SmokeTokenBlockDataset(
+            model_config.vocab_size,
+            stage.sequence_length,
+            training_config.seed + stage.index,
+            rank=rank,
+            world_size=world_size,
+        )
     else:
-        dataset = JsonlTokenBlockDataset(paths.data_jsonl, paths.tokenizer_path, stage.sequence_length, eos_id=eos_id)
+        dataset = JsonlTokenBlockDataset(
+            paths.data_jsonl,
+            paths.tokenizer_path,
+            stage.sequence_length,
+            eos_id=eos_id,
+            rank=rank,
+            world_size=world_size,
+        )
     loader = DataLoader(dataset, batch_size=training_config.micro_batch_size if micro_batch_size is None else micro_batch_size)
     return iter(loader)
 
@@ -471,6 +593,22 @@ def _apply_retention(checkpoint_root: Path, keep_last: int) -> None:
         shutil.rmtree(resolved_target)
 
 
+def _save_distributed_checkpoint(
+    runtime: DistributedRuntime,
+    target_dir: Path,
+    model: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    model_config: ModelConfig,
+    state: dict[str, object],
+) -> None:
+    """Checkpoint yan etkisini rank zero ile sinirlar ve rank'leri hizalar."""
+
+    runtime.barrier()
+    if runtime.is_primary:
+        save_training_checkpoint(target_dir, model, optimizer, model_config, state)
+    runtime.barrier()
+
+
 def _set_seed(seed: int) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
@@ -503,6 +641,24 @@ def _resolve_data_parallel(config: TrainingConfig, device: torch.device) -> Para
 
     cuda_device_count = torch.cuda.device_count() if device.type == "cuda" else 0
     return resolve_data_parallel(config.data_parallel, device.type, cuda_device_count)
+
+
+def _resolve_parallelism(
+    config: TrainingConfig,
+    device: torch.device,
+    runtime: DistributedRuntime,
+) -> ParallelismDecision:
+    """Runtime rank bilgisiyle tek cihaz, DataParallel veya DDP yolunu secer."""
+
+    cuda_device_count = torch.cuda.device_count() if device.type == "cuda" else 0
+    return resolve_parallelism(
+        config.data_parallel,
+        device.type,
+        cuda_device_count,
+        distributed_world_size=runtime.world_size,
+        rank=runtime.rank,
+        local_rank=runtime.local_rank,
+    )
 
 
 def _looks_like_tpu_runtime() -> bool:
