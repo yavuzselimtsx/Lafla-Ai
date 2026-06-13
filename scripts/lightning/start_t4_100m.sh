@@ -36,7 +36,7 @@ ensure_python_bootstrap() {
 }
 
 create_virtualenv() {
-  if [ -x "$VENV/bin/python" ]; then
+  if [ -x "$VENV/bin/python" ] && [ -f "$VENV/bin/activate" ] && [ -x "$VENV/bin/pip" ]; then
     return
   fi
   if [ -e "$VENV" ]; then
