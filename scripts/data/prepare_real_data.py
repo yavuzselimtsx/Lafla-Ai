@@ -177,6 +177,7 @@ def main() -> int:
     parser.add_argument("--target-chars", type=int, default=2_200_000_000)
     parser.add_argument("--min-chars", type=int, default=900_000_000)
     parser.add_argument("--max-record-chars", type=int, default=12_000)
+    parser.add_argument("--top-up-passes", type=int, default=1)
     args = parser.parse_args()
     try:
         return run(args)
@@ -209,29 +210,55 @@ def run(args: argparse.Namespace) -> int:
             source_report = SourceReport(source_id=str(spec["source_id"]))
             source_reports.append(source_report)
             try:
-                for raw_text in iter_source_texts(spec):
-                    text = clean_text(raw_text, args.max_record_chars, spec)
-                    if not text:
-                        source_report.rejected += 1
-                        continue
-                    digest = hashlib.sha256(compact_for_hash(text).encode("utf-8")).hexdigest()
-                    if digest in seen:
-                        source_report.rejected += 1
-                        continue
-                    seen.add(digest)
-                    handle.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
-                    chars = len(text)
-                    source_report.accepted += 1
-                    source_report.chars += chars
-                    total_records += 1
-                    total_chars += chars
-                    if source_report.chars >= source_target or total_chars >= args.target_chars:
-                        break
+                total_chars, total_records = append_real_records(
+                    spec=spec,
+                    report=source_report,
+                    handle=handle,
+                    seen=seen,
+                    total_chars=total_chars,
+                    total_records=total_records,
+                    source_target_chars=source_target,
+                    global_target_chars=args.target_chars,
+                    max_record_chars=args.max_record_chars,
+                )
                 source_report.status = "ok" if source_report.accepted else "empty"
             except Exception as exc:  # noqa: BLE001
                 source_report.status = "optional_failed" if spec.get("optional") else "failed"
                 source_report.error = str(exc)
                 print(f"Source skipped: {spec['source_id']}: {exc}", file=sys.stderr)
+        top_up_chars_before = total_chars
+        top_up_passes = max(0, int(getattr(args, "top_up_passes", 1)))
+        for _pass_index in range(top_up_passes):
+            if total_chars >= args.min_chars or total_chars >= args.target_chars:
+                break
+            made_progress = False
+            for spec, source_report in zip(specs, source_reports):
+                if source_report.status != "ok" or source_report.accepted <= 0:
+                    continue
+                needed_for_min = args.min_chars - total_chars
+                if needed_for_min <= 0:
+                    break
+                before = total_chars
+                try:
+                    total_chars, total_records = append_real_records(
+                        spec=spec,
+                        report=source_report,
+                        handle=handle,
+                        seen=seen,
+                        total_chars=total_chars,
+                        total_records=total_records,
+                        source_target_chars=needed_for_min,
+                        global_target_chars=args.min_chars,
+                        max_record_chars=args.max_record_chars,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    source_report.error = f"{source_report.error}; top-up: {exc}".strip("; ")
+                    continue
+                made_progress = made_progress or total_chars > before
+                if total_chars >= args.min_chars:
+                    break
+            if not made_progress:
+                break
 
     ok = total_chars >= args.min_chars
     report = {
@@ -243,6 +270,8 @@ def run(args: argparse.Namespace) -> int:
         "min_chars": args.min_chars,
         "total_chars": total_chars,
         "total_records": total_records,
+        "top_up_chars": total_chars - top_up_chars_before,
+        "top_up_passes": top_up_passes,
         "unique_hashes": len(seen),
         "seconds": round(time.time() - started, 3),
         "sources": [asdict(item) for item in source_reports],
@@ -263,6 +292,41 @@ def resolve_source_specs(identity_jsonl: str) -> tuple[dict[str, Any], ...]:
             item["source_url"] = f"local://{identity_jsonl}"
         resolved.append(item)
     return tuple(resolved)
+
+
+def append_real_records(
+    *,
+    spec: Mapping[str, Any],
+    report: SourceReport,
+    handle: Any,
+    seen: set[str],
+    total_chars: int,
+    total_records: int,
+    source_target_chars: int,
+    global_target_chars: int,
+    max_record_chars: int,
+) -> tuple[int, int]:
+    collected_chars = 0
+    for raw_text in iter_source_texts(spec):
+        text = clean_text(raw_text, max_record_chars, spec)
+        if not text:
+            report.rejected += 1
+            continue
+        digest = hashlib.sha256(compact_for_hash(text).encode("utf-8")).hexdigest()
+        if digest in seen:
+            report.rejected += 1
+            continue
+        seen.add(digest)
+        handle.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
+        chars = len(text)
+        report.accepted += 1
+        report.chars += chars
+        collected_chars += chars
+        total_records += 1
+        total_chars += chars
+        if collected_chars >= source_target_chars or total_chars >= global_target_chars:
+            break
+    return total_chars, total_records
 
 
 def iter_source_texts(spec: Mapping[str, Any]) -> Iterable[str]:
