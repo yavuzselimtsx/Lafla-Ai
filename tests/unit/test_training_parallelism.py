@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
+from lafla_ai_core.training.curriculum import CurriculumStage, tokens_per_optimizer_step
 from lafla_ai_core.training.parallelism import (
     ParallelismDecision,
     effective_micro_batch_size,
@@ -138,6 +139,15 @@ class TrainingParallelismConfigTest(unittest.TestCase):
         self.assertEqual(geometry.global_micro_batch_size, 4)
         self.assertEqual(geometry.gradient_accumulation_steps, 8)
         self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+        self.assertEqual(
+            tokens_per_optimizer_step(
+                _training_config(),
+                CurriculumStage(index=0, sequence_length=2048, start_token=0, next_start_token=None),
+                micro_batch_size=geometry.global_micro_batch_size,
+                gradient_accumulation_steps=geometry.gradient_accumulation_steps,
+            ),
+            65_536,
+        )
 
     def test_rank_positions_are_disjoint_and_reconstruct_source(self):
         source = tuple(range(8))
