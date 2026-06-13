@@ -9,6 +9,8 @@ class LightningT4LauncherTest(unittest.TestCase):
         self.assertIn("/teamspace/studios/this_studio", script)
         self.assertIn("LaflaAI100M", script)
         self.assertIn("python3 -m venv", script)
+        self.assertIn("get-pip.py", script)
+        self.assertIn("python3 -m virtualenv", script)
         self.assertIn("python3.12-venv", script)
         self.assertIn("python3-pip", script)
         self.assertIn("download.pytorch.org/whl/cu121", script)

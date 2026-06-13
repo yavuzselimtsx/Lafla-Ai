@@ -32,21 +32,41 @@ test -d "$REPO" || { echo "Repo bulunamadi: $REPO" >&2; exit 2; }
 cd "$REPO"
 
 ensure_python_bootstrap() {
-  if python3 -m venv --help >/dev/null 2>&1 && python3 -m pip --version >/dev/null 2>&1; then
+  if ! python3 -m pip --version >/dev/null 2>&1; then
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/lafla-get-pip.py
+    python3 /tmp/lafla-get-pip.py --user
+  fi
+  python3 -m pip install --user --upgrade virtualenv
+}
+
+create_virtualenv() {
+  if [ -x "$VENV/bin/python" ]; then
     return
   fi
-  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true >/dev/null 2>&1; then
-    echo "python3-venv/python3-pip eksik ve passwordless sudo yok" >&2
-    exit 2
+  if [ -e "$VENV" ]; then
+    case "$VENV" in
+      "$ROOT"/.venvs/*) rm -rf "$VENV" ;;
+      *) echo "Guvenli olmayan VENV yolu temizlenmedi: $VENV" >&2; exit 2 ;;
+    esac
   fi
-  sudo apt-get update
-  sudo apt-get install -y python3.12-venv python3-pip
+  if python3 -m virtualenv "$VENV"; then
+    return
+  fi
+  if python3 -m venv "$VENV"; then
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y python3.12-venv python3-pip
+    python3 -m venv "$VENV"
+    return
+  fi
+  echo "venv olusturulamadi; virtualenv, python3-venv veya passwordless sudo gerekli" >&2
+  exit 2
 }
 
 ensure_python_bootstrap
-if [ ! -x "$VENV/bin/python" ]; then
-  python3 -m venv "$VENV"
-fi
+create_virtualenv
 source "$VENV/bin/activate"
 
 python -m pip install --upgrade pip wheel setuptools
