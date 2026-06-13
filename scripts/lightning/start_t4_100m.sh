@@ -32,11 +32,7 @@ test -d "$REPO" || { echo "Repo bulunamadi: $REPO" >&2; exit 2; }
 cd "$REPO"
 
 ensure_python_bootstrap() {
-  if ! python3 -m pip --version >/dev/null 2>&1; then
-    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/lafla-get-pip.py
-    python3 /tmp/lafla-get-pip.py --user
-  fi
-  python3 -m pip install --user --upgrade virtualenv
+  return 0
 }
 
 create_virtualenv() {
@@ -49,12 +45,24 @@ create_virtualenv() {
       *) echo "Guvenli olmayan VENV yolu temizlenmedi: $VENV" >&2; exit 2 ;;
     esac
   fi
-  if python3 -m virtualenv "$VENV"; then
-    return
-  fi
   if python3 -m venv "$VENV"; then
     return
   fi
+  case "$VENV" in
+    "$ROOT"/.venvs/*) rm -rf "$VENV" ;;
+    *) echo "Guvenli olmayan VENV yolu temizlenmedi: $VENV" >&2; exit 2 ;;
+  esac
+  if ! python3 -m pip --version >/dev/null 2>&1; then
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/lafla-get-pip.py
+    python3 /tmp/lafla-get-pip.py --user --break-system-packages
+  fi
+  if python3 -m pip install --user --upgrade --break-system-packages virtualenv && python3 -m virtualenv "$VENV"; then
+    return
+  fi
+  case "$VENV" in
+    "$ROOT"/.venvs/*) rm -rf "$VENV" ;;
+    *) echo "Guvenli olmayan VENV yolu temizlenmedi: $VENV" >&2; exit 2 ;;
+  esac
   if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
     sudo apt-get update
     sudo apt-get install -y python3.12-venv python3-pip
