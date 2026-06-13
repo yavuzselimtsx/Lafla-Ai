@@ -40,16 +40,17 @@ def iter_jsonl_texts(paths: Iterable[str | Path]) -> Iterable[str]:
         path = Path(raw_path)
         if not path.exists():
             raise FileNotFoundError(f"data jsonl bulunamadi: {path}")
-        for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_no} JSONL gecersiz: {exc}") from exc
-            text = _record_to_text(record, f"{path}:{line_no}")
-            if text:
-                yield text
+        with path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{path}:{line_no} JSONL gecersiz: {exc}") from exc
+                text = _record_to_text(record, f"{path}:{line_no}")
+                if text:
+                    yield text
 
 
 def pack_token_sequences(

@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from lafla_ai_core.data.packing import iter_jsonl_texts, iter_packed_token_blocks, pack_token_sequences
 
@@ -38,6 +39,16 @@ class PackingTest(unittest.TestCase):
             )
             texts = list(iter_jsonl_texts([path]))
         self.assertEqual(texts, ["<|bos|>\n<|user|>\nMerhaba\n<|assistant|>\nSelam."])
+
+    def test_iter_jsonl_texts_streams_file_without_read_text(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "train.jsonl"
+            path.write_text(json.dumps({"text": "gecerli kayit"}) + "\n", encoding="utf-8")
+
+            with patch.object(Path, "read_text", side_effect=AssertionError("tum dosya RAM'e alinmamali")):
+                texts = list(iter_jsonl_texts([path]))
+
+        self.assertEqual(texts, ["gecerli kayit"])
 
 
 if __name__ == "__main__":

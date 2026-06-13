@@ -1,8 +1,13 @@
 # Kaggle GPU profile for LaflaGPT Mini pretraining, 100M technical profile.
-# Use GPU T4 x2 when available; data_parallel=auto falls back to one GPU/P100.
+# Multi-GPU is launched with torchrun/DDP; one GPU keeps the same runner.
 training:
   accelerator: cuda
   data_parallel: auto
+  distributed_backend: auto
+  gradient_sync: final_microstep
+  pin_memory: true
+  prefer_fused_optimizer: true
+  prefer_native_gqa: true
   max_steps: 250000
   sequence_length: 2048
   sequence_curriculum:

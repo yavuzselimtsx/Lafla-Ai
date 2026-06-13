@@ -45,6 +45,8 @@ print("cuda_device_count=", torch.cuda.device_count())
 for index in range(torch.cuda.device_count()):
     print(f"cuda:{index}=", torch.cuda.get_device_name(index))
 PY
+CUDA_DEVICE_COUNT="$(python -c 'import torch; print(torch.cuda.device_count())')"
+test "$CUDA_DEVICE_COUNT" -ge 1 || { echo "Kaggle GPU launcher en az bir CUDA cihazi gerektirir" >&2; exit 2; }
 
 python -m lafla_ai_core.cli.check_environment --optimizer adamw --accelerator cuda
 python -m lafla_ai_core.cli.quality_scan --root .
@@ -57,6 +59,10 @@ python -m lafla_ai_core.cli.preflight \
 python -m lafla_ai_core.cli.data_audit \
   --manifest "$MANIFEST" \
   --report "$REPORTS/data-audit.json"
+python -m lafla_ai_core.cli.validate_pretraining_data \
+  --data-jsonl configs/data/identity/lafla-model-identity-100m.jsonl \
+  --data-jsonl "$DATA_JSONL" \
+  --report "$REPORTS/pretraining-data-validation.json"
 
 if [ ! -s "$TOKENIZER" ]; then
   python -m lafla_ai_core.cli.tokenizer_train \
@@ -106,8 +112,14 @@ path.parent.mkdir(parents=True, exist_ok=True)
 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
+TRAIN_LAUNCHER=(python)
+if [ "$CUDA_DEVICE_COUNT" -ge 2 ]; then
+  TRAIN_LAUNCHER=(torchrun --standalone --nproc_per_node "$CUDA_DEVICE_COUNT")
+fi
+echo "[lafla] training_launcher=${TRAIN_LAUNCHER[*]}"
+
 TRAIN_ARGS=(
-  python -m lafla_ai_core.cli.train_pretrain
+  -m lafla_ai_core.cli.train_pretrain
   --model-config configs/model/lafla-100m-thinking.yaml
   --training-config configs/training/kaggle/kaggle-gpu-100m.yaml
   --tokenizer-path "$TOKENIZER"
@@ -120,7 +132,7 @@ if [ -n "${RESUME_FROM:-}" ]; then
   test -d "$RESUME_FROM" || { echo "RESUME_FROM checkpoint bulunamadi: $RESUME_FROM" >&2; exit 2; }
   TRAIN_ARGS+=(--resume-from "$RESUME_FROM")
 fi
-"${TRAIN_ARGS[@]}"
+"${TRAIN_LAUNCHER[@]}" "${TRAIN_ARGS[@]}"
 
 python -m lafla_ai_core.cli.artifact_manifest \
   --root "$WORK" \

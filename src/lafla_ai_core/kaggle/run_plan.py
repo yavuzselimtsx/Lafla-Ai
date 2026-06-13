@@ -3,8 +3,8 @@
 @Aciklama: Kaggle GPU uzerinde LaflaAi-Core egitimi icin tekrar uretilebilir
             komut plani olusturur.
 @Yazar: Lafla Gelistirme Ekibi
-@Bilgi: T4 x2 varsa DataParallel config ile kullanilir; tek GPU/P100/CPU
-        durumunda runner tek cihaz yoluna duser.
+@Bilgi: Birden fazla CUDA cihazi torchrun/DDP ile, tek CUDA cihazi normal
+        Python runner ile kullanilir.
 @Uyari: Gercek veri ve manifest olmadan egitim komutu uretilen planda durur.
 @Calisma-Semasi: paths -> validate -> commands -> KaggleRunPlan
 """
@@ -112,6 +112,12 @@ def build_kaggle_run_plan(
             f"{_q(profile.post_training_config)}"
         ),
         f"cd {repo} && {env} python -m lafla_ai_core.cli.data_audit --manifest {manifest} --report {_q(str(work_root / 'reports/data-audit.json'))}",
+        (
+            f"cd {repo} && {env} python -m lafla_ai_core.cli.validate_pretraining_data "
+            f"--data-jsonl {identity_data} "
+            f"--data-jsonl {data} "
+            f"--report {_q(str(work_root / 'reports/pretraining-data-validation.json'))}"
+        ),
         f"cd {repo} && {env} python -m lafla_ai_core.cli.tokenizer_train "
         f"--config {_q(profile.tokenizer_config)} "
         f"--output {_q(paths.tokenizer_path)} "
@@ -138,7 +144,11 @@ def build_kaggle_run_plan(
             (
                 "RESUME_ARGS=(); "
                 "if [ -n \"${RESUME_FROM:-}\" ]; then RESUME_ARGS+=(--resume-from \"$RESUME_FROM\"); fi; "
-                f"cd {repo} && {env} python -m lafla_ai_core.cli.train_pretrain "
+                "CUDA_DEVICE_COUNT=$(python -c 'import torch; print(torch.cuda.device_count())'); "
+                "TRAIN_LAUNCHER=(python); "
+                "if [ \"$CUDA_DEVICE_COUNT\" -ge 2 ]; then "
+                "TRAIN_LAUNCHER=(torchrun --standalone --nproc_per_node \"$CUDA_DEVICE_COUNT\"); fi; "
+                f"cd {repo} && {env} \"${{TRAIN_LAUNCHER[@]}}\" -m lafla_ai_core.cli.train_pretrain "
                 f"--model-config {_q(profile.model_config)} "
                 f"--training-config {_q(profile.training_config)} "
                 f"--tokenizer-path {_q(paths.tokenizer_path)} "

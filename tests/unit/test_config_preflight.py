@@ -43,6 +43,11 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertEqual(training.cuda_micro_batch_size_per_device, 2)
         self.assertEqual(training.target_sequences_per_optimizer_step, 32)
         self.assertEqual(training.gradient_checkpointing_min_sequence_length, 4096)
+        self.assertEqual(training.distributed_backend, "auto")
+        self.assertEqual(training.gradient_sync, "final_microstep")
+        self.assertTrue(training.pin_memory)
+        self.assertTrue(training.prefer_fused_optimizer)
+        self.assertTrue(training.prefer_native_gqa)
 
     def test_training_config_rejects_invalid_distributed_policy(self):
         training = TrainingConfig.from_mapping(

@@ -17,6 +17,10 @@ class KaggleRunPlanTest(unittest.TestCase):
         self.assertIn("configs/training/kaggle/kaggle-gpu-100m.yaml", joined)
         self.assertIn("--accelerator cuda", joined)
         self.assertIn("lafla_ai_core.cli.train_pretrain", joined)
+        self.assertIn("lafla_ai_core.cli.validate_pretraining_data", joined)
+        self.assertIn("torchrun --standalone --nproc_per_node", joined)
+        self.assertIn("CUDA_DEVICE_COUNT", joined)
+        self.assertIn("RESUME_FROM", joined)
         self.assertIn("lafla-100m-thinking-kaggle-gpu-run.tar.gz", joined)
         self.assertNotIn("PJRT_DEVICE=TPU", joined)
         self.assertNotIn("torch_xla", joined)
@@ -29,6 +33,7 @@ class KaggleRunPlanTest(unittest.TestCase):
         self.assertIn("test -s /kaggle/working/LaflaAI100M/data/train.jsonl", joined)
         self.assertIn("test -s /kaggle/working/LaflaAI100M/data/veri_manifesti.json", joined)
         self.assertNotIn("lightning_prepare_real_data.py", joined)
+        self.assertLess(joined.index("validate_pretraining_data"), joined.index("train_pretrain"))
 
 
 if __name__ == "__main__":
