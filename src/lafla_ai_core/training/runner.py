@@ -36,6 +36,7 @@ from lafla_ai_core.training.checkpoint_policy import CheckpointPolicy, retention
 from lafla_ai_core.training.curriculum import CurriculumStage, resolve_curriculum_stage, tokens_per_optimizer_step
 from lafla_ai_core.training.distributed import DistributedRuntime, initialize_distributed
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
+from lafla_ai_core.training.optimizer_policy import resolve_adamw_fast_path
 from lafla_ai_core.training.parallelism import (
     ParallelismDecision,
     gradient_sync_context,
@@ -509,25 +510,34 @@ def build_optimizer(
 
     param_groups = _optimizer_param_groups(model, config.weight_decay)
     if config.optimizer == "adamw":
-        if config.prefer_fused_optimizer and device is not None and device.type == "cuda":
+        optimizer_policy = resolve_adamw_fast_path(
+            prefer_fused_optimizer=config.prefer_fused_optimizer,
+            device_type="none" if device is None else device.type,
+            precision=config.precision,
+        )
+        if optimizer_policy.use_fused:
             try:
                 optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate, fused=True)
             except TypeError:
-                optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
+                optimizer = _build_standard_adamw(param_groups, lr=config.learning_rate)
             except RuntimeError as exc:
                 message = str(exc).lower()
                 if "fused" not in message or not any(
                     marker in message for marker in ("unsupported", "not supported", "requires")
                 ):
                     raise
-                optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
+                optimizer = _build_standard_adamw(param_groups, lr=config.learning_rate)
             else:
-                _mark_optimizer_mode(optimizer, "fused_adamw")
+                _mark_optimizer_mode(optimizer, optimizer_policy.mode)
                 return optimizer
             _mark_optimizer_mode(optimizer, "adamw_fallback")
             return optimizer
-        optimizer = torch.optim.AdamW(param_groups, lr=config.learning_rate)
-        _mark_optimizer_mode(optimizer, "adamw")
+        optimizer = _build_standard_adamw(
+            param_groups,
+            lr=config.learning_rate,
+            force_single_tensor=optimizer_policy.force_single_tensor,
+        )
+        _mark_optimizer_mode(optimizer, optimizer_policy.mode)
         return optimizer
     if config.optimizer == "adamw8bit":
         try:
@@ -632,6 +642,22 @@ def _mark_optimizer_mode(optimizer: object, mode: str) -> None:
         setattr(optimizer, "_lafla_optimizer_mode", mode)
     except (AttributeError, TypeError):
         pass
+
+
+def _build_standard_adamw(
+    param_groups: list[dict[str, object]],
+    *,
+    lr: float,
+    force_single_tensor: bool = False,
+) -> torch.optim.Optimizer:
+    """Standart AdamW kurar; fp16 AMP yolunda foreach/fused kernelden kacinir."""
+
+    if force_single_tensor:
+        try:
+            return torch.optim.AdamW(param_groups, lr=lr, fused=False, foreach=False)
+        except TypeError:
+            return torch.optim.AdamW(param_groups, lr=lr)
+    return torch.optim.AdamW(param_groups, lr=lr)
 
 
 def _probe_native_gqa(
