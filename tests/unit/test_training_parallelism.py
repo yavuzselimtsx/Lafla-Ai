@@ -7,8 +7,11 @@ from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
 from lafla_ai_core.training.parallelism import (
     ParallelismDecision,
     effective_micro_batch_size,
+    iter_rank_positions,
     resolve_batch_geometry,
     resolve_gradient_checkpointing,
+    resolve_parallelism,
+    should_sync_gradients,
 )
 
 try:
@@ -90,6 +93,62 @@ class TrainingParallelismConfigTest(unittest.TestCase):
         config.validate()
 
         self.assertEqual(config.data_parallel, "auto")
+
+    def test_training_config_accepts_safe_distributed_fast_paths(self):
+        config = _training_config(
+            data_parallel="auto",
+            distributed_backend="auto",
+            gradient_sync="final_microstep",
+            pin_memory=True,
+            prefer_fused_optimizer=True,
+            prefer_native_gqa=True,
+        )
+
+        config.validate()
+
+        self.assertEqual(config.distributed_backend, "auto")
+        self.assertEqual(config.gradient_sync, "final_microstep")
+        self.assertTrue(config.pin_memory)
+        self.assertTrue(config.prefer_fused_optimizer)
+        self.assertTrue(config.prefer_native_gqa)
+
+    def test_ddp_geometry_keeps_32_sequences_with_rank_local_batches(self):
+        decision = resolve_parallelism(
+            data_parallel="auto",
+            device_type="cuda",
+            cuda_device_count=2,
+            distributed_world_size=2,
+            rank=1,
+            local_rank=1,
+        )
+
+        geometry = resolve_batch_geometry(
+            configured_micro_batch_size=1,
+            configured_gradient_accumulation_steps=16,
+            cuda_micro_batch_size_per_device=2,
+            target_sequences_per_optimizer_step=32,
+            decision=decision,
+        )
+
+        self.assertEqual(decision.mode, "distributed_data_parallel")
+        self.assertEqual(geometry.per_process_micro_batch_size, 2)
+        self.assertEqual(geometry.global_micro_batch_size, 4)
+        self.assertEqual(geometry.gradient_accumulation_steps, 8)
+        self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+
+    def test_rank_positions_are_disjoint_and_reconstruct_source(self):
+        source = tuple(range(8))
+        rank_zero = tuple(iter_rank_positions(source, rank=0, world_size=2))
+        rank_one = tuple(iter_rank_positions(source, rank=1, world_size=2))
+
+        self.assertEqual(rank_zero, (0, 2, 4, 6))
+        self.assertEqual(rank_one, (1, 3, 5, 7))
+        self.assertEqual(tuple(value for pair in zip(rank_zero, rank_one) for value in pair), source)
+
+    def test_gradient_sync_occurs_only_on_final_accumulation_microstep(self):
+        self.assertFalse(should_sync_gradients(0, 8))
+        self.assertFalse(should_sync_gradients(6, 8))
+        self.assertTrue(should_sync_gradients(7, 8))
 
     def test_effective_micro_batch_uses_both_cuda_devices_when_data_parallel_is_enabled(self):
         decision = ParallelismDecision(

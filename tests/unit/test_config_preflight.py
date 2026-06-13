@@ -44,6 +44,29 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertEqual(training.target_sequences_per_optimizer_step, 32)
         self.assertEqual(training.gradient_checkpointing_min_sequence_length, 4096)
 
+    def test_training_config_rejects_invalid_distributed_policy(self):
+        training = TrainingConfig.from_mapping(
+            {
+                "training": {
+                    "max_steps": 10,
+                    "sequence_length": 128,
+                    "micro_batch_size": 1,
+                    "gradient_accumulation_steps": 1,
+                    "precision": "fp32",
+                    "optimizer": "adamw",
+                    "learning_rate": 0.001,
+                    "warmup_steps": 1,
+                    "save_every": 5,
+                    "keep_last_checkpoints": 1,
+                    "require_drive_or_explicit_local_fallback": False,
+                    "distributed_backend": "invalid",
+                }
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "distributed_backend"):
+            training.validate()
+
     def test_model_config_loads_and_validates(self):
         path = Path("configs/model/lafla-400m-thinking.yaml")
         config = ModelConfig.from_mapping(load_mapping(path))

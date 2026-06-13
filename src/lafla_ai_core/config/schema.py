@@ -216,6 +216,11 @@ class TrainingConfig:
     target_tokens: int = 0
     checkpoint_every_tokens: int = 0
     data_parallel: str = "off"
+    distributed_backend: str = "auto"
+    gradient_sync: str = "every_microstep"
+    pin_memory: bool = False
+    prefer_fused_optimizer: bool = False
+    prefer_native_gqa: bool = False
     cuda_micro_batch_size_per_device: int = 0
     target_sequences_per_optimizer_step: int = 0
     gradient_checkpointing_min_sequence_length: int = 0
@@ -252,6 +257,11 @@ class TrainingConfig:
             target_tokens=int(training.get("target_tokens", 0)),
             checkpoint_every_tokens=int(training.get("checkpoint_every_tokens", 0)),
             data_parallel=str(training.get("data_parallel", "off")),
+            distributed_backend=str(training.get("distributed_backend", "auto")),
+            gradient_sync=str(training.get("gradient_sync", "every_microstep")),
+            pin_memory=bool(training.get("pin_memory", False)),
+            prefer_fused_optimizer=bool(training.get("prefer_fused_optimizer", False)),
+            prefer_native_gqa=bool(training.get("prefer_native_gqa", False)),
             cuda_micro_batch_size_per_device=int(training.get("cuda_micro_batch_size_per_device", 0)),
             target_sequences_per_optimizer_step=int(training.get("target_sequences_per_optimizer_step", 0)),
             gradient_checkpointing_min_sequence_length=int(
@@ -270,12 +280,22 @@ class TrainingConfig:
         _require(self.optimizer in {"adamw", "adamw8bit", "lion"}, "desteklenmeyen optimizer")
         _require(self.accelerator in {"auto", "cuda", "xla", "cpu"}, "desteklenmeyen accelerator")
         _require(self.data_parallel in {"off", "auto", "on"}, "desteklenmeyen data_parallel")
+        _require(
+            self.distributed_backend in {"auto", "nccl", "gloo"},
+            "desteklenmeyen distributed_backend",
+        )
+        _require(
+            self.gradient_sync in {"every_microstep", "final_microstep"},
+            "desteklenmeyen gradient_sync",
+        )
         if self.accelerator == "xla":
             _require(self.optimizer == "adamw", "TPU/XLA icin optimizer=adamw olmali")
             _require(self.precision in {"bf16", "fp32"}, "TPU/XLA icin bf16 veya fp32 kullanilmali")
             _require(self.data_parallel != "on", "data_parallel=on XLA/TPU icin kullanilamaz")
+            _require(self.distributed_backend == "auto", "XLA/TPU distributed_backend auto olmali")
         if self.accelerator == "cpu":
             _require(self.data_parallel != "on", "data_parallel=on CPU icin kullanilamaz")
+            _require(self.distributed_backend != "nccl", "CPU icin NCCL kullanilamaz")
         _require(0.0 < self.learning_rate <= 0.01, "learning_rate guvenli aralik disinda")
         _require(0.0 <= self.min_learning_rate <= self.learning_rate, "min_learning_rate hatali")
         _require(0.0 <= self.weight_decay <= 1.0, "weight_decay guvenli aralik disinda")
