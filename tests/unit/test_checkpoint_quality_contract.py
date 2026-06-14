@@ -256,12 +256,13 @@ class CheckpointQualityContractTest(unittest.TestCase):
         fake = FakeCliResult("4", (), True, ())
         stdout = io.StringIO()
 
-        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake):
+        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake) as generate:
             with contextlib.redirect_stdout(stdout):
                 exit_code = checkpoint_cli_main(["--checkpoint-dir", "ckpt", "--tokenizer-path", "tokenizer.json"])
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(json.loads(stdout.getvalue())["quality_ok"])
+        self.assertEqual(generate.call_args.kwargs["user_text"], "Sen Kimsin? Ve 2+2 Kaç Eder.")
 
     def test_checkpoint_cli_passes_runtime_config_for_developer_diagnostics(self):
         fake = FakeCliResult("<|user|>ham", ("safety_filters_disabled",), True, ())

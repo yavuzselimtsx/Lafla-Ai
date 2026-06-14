@@ -19,7 +19,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LaflaAi-Core checkpoint smoke generation")
     parser.add_argument("--checkpoint-dir", required=True)
     parser.add_argument("--tokenizer-path", required=True)
-    parser.add_argument("--prompt", default="2+2 kac eder? Kisa cevap ver.")
+    parser.add_argument("--prompt", default="Sen Kimsin? Ve 2+2 Kaç Eder.")
     parser.add_argument("--system-text")
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--device")
