@@ -24,6 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--device")
     parser.add_argument("--runtime-config")
+    parser.add_argument("--expect-regex", action="append", default=[])
     args = parser.parse_args(argv)
     runtime_config = RuntimeConfig.from_mapping(load_mapping(args.runtime_config)) if args.runtime_config else None
     if runtime_config is not None:
@@ -36,6 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_new_tokens=args.max_new_tokens,
         device=args.device,
         runtime_config=runtime_config,
+        expected_patterns=tuple(args.expect_regex),
     )
     print(result.to_json())
     return 0 if result.quality_ok else 2

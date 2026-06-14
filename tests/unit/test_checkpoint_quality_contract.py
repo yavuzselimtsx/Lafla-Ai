@@ -79,6 +79,26 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertFalse(assessment.ok)
         self.assertEqual(assessment.blocking_warnings, ("smoke_answer_drift",))
 
+    def test_expected_regex_blocks_incidental_number_match(self):
+        assessment = assess_checkpoint_generation_quality(
+            "LaflaGPT Mini, Yavuz Selim, (4) and (1)",
+            (),
+            expected_patterns=(r"2\s*\+\s*2\s*=\s*4",),
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("expected_answer_missing",))
+
+    def test_expected_regex_accepts_complete_identity_and_math_answer(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Ben LaflaGPT Mini'yim. Yavuz Selim tarafindan gelistirildim. 2+2=4.",
+            (),
+            expected_patterns=(r"LaflaGPT Mini", r"Yavuz Selim", r"2\s*\+\s*2\s*=\s*4"),
+        )
+
+        self.assertTrue(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ())
+
     def test_turkish_sentence_answer_is_quality_ok(self):
         assessment = assess_checkpoint_generation_quality("Merhaba, nasıl yardımcı olabilirim?", ())
 
@@ -174,6 +194,24 @@ class CheckpointQualityContractTest(unittest.TestCase):
 
         self.assertTrue(payload["quality_ok"])
         self.assertEqual(payload["blocking_warnings"], [])
+        self.assertEqual(payload["quality_scope"], "structural")
+
+    def test_checkpoint_result_json_exposes_semantic_quality_scope(self):
+        result = CheckpointGenerationResult(
+            checkpoint_dir="/tmp/checkpoint",
+            prompt_text="Sen kimsin? 2+2?",
+            public_text="LaflaGPT Mini. 2+2=4.",
+            warnings=(),
+            generated_token_count=8,
+            device="cpu",
+            quality_ok=True,
+            blocking_warnings=(),
+            quality_scope="semantic",
+        )
+
+        payload = json.loads(result.to_json())
+
+        self.assertEqual(payload["quality_scope"], "semantic")
 
     def test_checkpoint_result_json_exposes_blocking_warnings(self):
         result = CheckpointGenerationResult(
@@ -246,6 +284,31 @@ class CheckpointQualityContractTest(unittest.TestCase):
         runtime_config = generate.call_args.kwargs["runtime_config"]
         self.assertEqual(runtime_config.safety_profile, "off")
         self.assertTrue(json.loads(stdout.getvalue())["quality_ok"])
+
+    def test_checkpoint_cli_passes_repeatable_expected_regex(self):
+        fake = FakeCliResult("LaflaGPT Mini. 2+2=4.", (), True, ())
+        stdout = io.StringIO()
+
+        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake) as generate:
+            with contextlib.redirect_stdout(stdout):
+                exit_code = checkpoint_cli_main(
+                    [
+                        "--checkpoint-dir",
+                        "ckpt",
+                        "--tokenizer-path",
+                        "tokenizer.json",
+                        "--expect-regex",
+                        "LaflaGPT Mini",
+                        "--expect-regex",
+                        r"2\s*\+\s*2\s*=\s*4",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            generate.call_args.kwargs["expected_patterns"],
+            ("LaflaGPT Mini", r"2\s*\+\s*2\s*=\s*4"),
+        )
 
     def test_tokenizers_generation_adapter_disables_special_tokens_for_prompt_encoding(self):
         tokenizer = RecordingTokenizer()

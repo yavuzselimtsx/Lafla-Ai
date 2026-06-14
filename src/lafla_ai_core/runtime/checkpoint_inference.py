@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
@@ -37,6 +38,7 @@ BLOCKING_CHECKPOINT_WARNINGS = (
     "possible_mojibake",
     "safety_filters_disabled",
     "smoke_answer_drift",
+    "expected_answer_missing",
 )
 
 
@@ -62,6 +64,7 @@ class CheckpointGenerationResult:
     quality_ok: bool
     blocking_warnings: tuple[str, ...]
     raw_thinking: str | None = None
+    quality_scope: str = "structural"
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2, sort_keys=True)
@@ -113,6 +116,7 @@ def assess_checkpoint_generation_quality(
     warnings: Sequence[str],
     *,
     prompt_text: str | None = None,
+    expected_patterns: Sequence[str] = (),
 ) -> CheckpointQualityAssessment:
     """Checkpoint smoke generation sonucunu fail-closed kalite kararina cevirir."""
 
@@ -124,6 +128,8 @@ def assess_checkpoint_generation_quality(
         blocking.append("empty_public_text")
     if _is_short_math_smoke_prompt(prompt_text) and _short_math_smoke_drifted(public_text):
         blocking.append("smoke_answer_drift")
+    if expected_patterns and not _matches_all_expected_patterns(public_text, expected_patterns):
+        blocking.append("expected_answer_missing")
     if blocking:
         return CheckpointQualityAssessment(False, tuple(blocking), f"blocking_warnings:{','.join(blocking)}")
     return CheckpointQualityAssessment(True, (), "ok")
@@ -145,6 +151,17 @@ def _short_math_smoke_drifted(public_text: str) -> bool:
     return not any(answer in compact for answer in ("4", "dört", "dort"))
 
 
+def _matches_all_expected_patterns(public_text: str, expected_patterns: Sequence[str]) -> bool:
+    for pattern in expected_patterns:
+        try:
+            matched = re.search(pattern, public_text, flags=re.IGNORECASE) is not None
+        except re.error as exc:
+            raise ValueError(f"gecersiz expected regex: {pattern}") from exc
+        if not matched:
+            return False
+    return True
+
+
 def generate_from_checkpoint(
     *,
     checkpoint_dir: str | Path,
@@ -154,6 +171,7 @@ def generate_from_checkpoint(
     max_new_tokens: int = 64,
     device: str | None = None,
     runtime_config: RuntimeConfig | None = None,
+    expected_patterns: Sequence[str] = (),
 ) -> CheckpointGenerationResult:
     """Checkpoint'ten greedy smoke generation yapar ve public output guard sonucunu dondurur."""
 
@@ -209,7 +227,12 @@ def generate_from_checkpoint(
         system_text=resolved_system_text,
         runtime_config=runtime_config,
     )
-    quality = assess_checkpoint_generation_quality(guarded.text, guarded.warnings, prompt_text=user_text)
+    quality = assess_checkpoint_generation_quality(
+        guarded.text,
+        guarded.warnings,
+        prompt_text=user_text,
+        expected_patterns=expected_patterns,
+    )
     return CheckpointGenerationResult(
         checkpoint_dir=str(checkpoint),
         prompt_text=user_text,
@@ -220,6 +243,7 @@ def generate_from_checkpoint(
         quality_ok=quality.ok,
         blocking_warnings=quality.blocking_warnings,
         raw_thinking=raw_thinking,
+        quality_scope="semantic" if expected_patterns else "structural",
     )
 
 
