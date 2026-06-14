@@ -36,6 +36,7 @@ BLOCKING_CHECKPOINT_WARNINGS = (
     "possible_prompt_leak",
     "possible_mojibake",
     "safety_filters_disabled",
+    "smoke_answer_drift",
 )
 
 
@@ -107,7 +108,12 @@ def build_model_system_text(model_config: ModelConfig) -> str:
     )
 
 
-def assess_checkpoint_generation_quality(public_text: str, warnings: Sequence[str]) -> CheckpointQualityAssessment:
+def assess_checkpoint_generation_quality(
+    public_text: str,
+    warnings: Sequence[str],
+    *,
+    prompt_text: str | None = None,
+) -> CheckpointQualityAssessment:
     """Checkpoint smoke generation sonucunu fail-closed kalite kararina cevirir."""
 
     blocking: list[str] = []
@@ -116,9 +122,27 @@ def assess_checkpoint_generation_quality(public_text: str, warnings: Sequence[st
             blocking.append(str(warning))
     if not public_text.strip() and "empty_after_output_guard" not in blocking:
         blocking.append("empty_public_text")
+    if _is_short_math_smoke_prompt(prompt_text) and _short_math_smoke_drifted(public_text):
+        blocking.append("smoke_answer_drift")
     if blocking:
         return CheckpointQualityAssessment(False, tuple(blocking), f"blocking_warnings:{','.join(blocking)}")
     return CheckpointQualityAssessment(True, (), "ok")
+
+
+def _is_short_math_smoke_prompt(prompt_text: str | None) -> bool:
+    if prompt_text is None:
+        return False
+    compact = "".join(char.casefold() for char in prompt_text if char.isalnum())
+    return "22" in compact and ("kisa" in compact or "kısa" in compact or "short" in compact)
+
+
+def _short_math_smoke_drifted(public_text: str) -> bool:
+    compact = " ".join(public_text.split()).casefold()
+    if not compact:
+        return True
+    if len(compact) > 80:
+        return True
+    return not any(answer in compact for answer in ("4", "dört", "dort"))
 
 
 def generate_from_checkpoint(
@@ -185,7 +209,7 @@ def generate_from_checkpoint(
         system_text=resolved_system_text,
         runtime_config=runtime_config,
     )
-    quality = assess_checkpoint_generation_quality(guarded.text, guarded.warnings)
+    quality = assess_checkpoint_generation_quality(guarded.text, guarded.warnings, prompt_text=user_text)
     return CheckpointGenerationResult(
         checkpoint_dir=str(checkpoint),
         prompt_text=user_text,

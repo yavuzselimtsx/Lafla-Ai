@@ -69,6 +69,16 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertTrue(assessment.ok)
         self.assertEqual(assessment.blocking_warnings, ())
 
+    def test_short_math_smoke_blocks_identity_digression(self):
+        assessment = assess_checkpoint_generation_quality(
+            "3+4=4=4 LaflaGPT Mini, Yavuz Selim tarafindan gelistirilen ve Guney Kore merkezli bir programdir.",
+            (),
+            prompt_text="2+2 kac eder? Kisa cevap ver.",
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("smoke_answer_drift",))
+
     def test_turkish_sentence_answer_is_quality_ok(self):
         assessment = assess_checkpoint_generation_quality("Merhaba, nasıl yardımcı olabilirim?", ())
 
