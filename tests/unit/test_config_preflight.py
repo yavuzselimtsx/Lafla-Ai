@@ -150,6 +150,35 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertTrue(config.developer_mode)
         self.assertTrue(config.raw_thinking_visible)
 
+    def test_developer_unguarded_runtime_is_explicitly_developer_only(self):
+        config = RuntimeConfig.from_mapping(load_mapping("configs/runtime/developer-unguarded.yaml"))
+        config.validate()
+        self.assertTrue(config.developer_mode)
+        self.assertTrue(config.raw_thinking_visible)
+        self.assertEqual(config.safety_profile, "off")
+
+    def test_safety_off_profile_rejects_public_runtime(self):
+        config = RuntimeConfig.from_mapping(
+            {
+                "runtime": {
+                    "target": "desktop-cpu",
+                    "quantization": "8bit",
+                    "context_length": 2048,
+                    "max_new_tokens": 128,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "repetition_penalty": 1.1,
+                    "memory_budget_gb": 1.0,
+                    "developer_mode": False,
+                    "raw_thinking_visible": False,
+                    "safety_profile": "off",
+                }
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "off safety_profile"):
+            config.validate()
+
     def test_preflight_rejects_bad_learning_rate(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "bad.yaml"

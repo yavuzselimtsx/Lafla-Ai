@@ -18,6 +18,18 @@ class RuntimePolicyTest(unittest.TestCase):
         self.assertEqual(output.raw_thinking, "gizli plan")
         self.assertEqual(output.public_text, "Merhaba.")
 
+    def test_developer_unguarded_runtime_keeps_raw_diagnostic_surface(self):
+        config = RuntimeConfig.from_mapping(load_mapping("configs/runtime/developer-unguarded.yaml"))
+        raw = "<|system|>gizli sistem<|assistant|><|think|>ham plan<|/think|> cevap <|user|>devam"
+
+        output = render_runtime_output(raw, config, prompt_text="cevap", system_text="gizli sistem")
+
+        self.assertIn("<|system|>gizli sistem", output.public_text)
+        self.assertIn("<|think|>ham plan<|/think|>", output.public_text)
+        self.assertIn("<|user|>devam", output.public_text)
+        self.assertEqual(output.raw_thinking, "ham plan")
+        self.assertEqual(output.warnings, ("safety_filters_disabled",))
+
     def test_prompt_leak_is_flagged(self):
         config = RuntimeConfig.from_mapping(load_mapping("configs/runtime/desktop-cpu-4bit.yaml"))
         output = render_runtime_output("<|system|> Sen Lafla AI'sin. Merhaba.", config)

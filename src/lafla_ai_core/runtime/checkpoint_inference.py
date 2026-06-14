@@ -14,10 +14,16 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Sequence
 
-from lafla_ai_core.config.schema import ModelConfig
+from lafla_ai_core.config.schema import ModelConfig, RuntimeConfig
 from lafla_ai_core.model.checkpoint_contract import validate_checkpoint_directory
 from lafla_ai_core.runtime.context import ChatMessage
-from lafla_ai_core.runtime.generation_contract import build_generation_request, decode_completion_from_ids
+from lafla_ai_core.runtime.generation_contract import (
+    build_generation_request,
+    decode_completion_from_ids,
+    trim_completion_token_ids,
+)
+from lafla_ai_core.runtime.output_guard import OutputGuardResult
+from lafla_ai_core.runtime.policy import render_runtime_output
 
 
 DEFAULT_SYSTEM_TEXT = (
@@ -53,6 +59,7 @@ class CheckpointGenerationResult:
     device: str
     quality_ok: bool
     blocking_warnings: tuple[str, ...]
+    raw_thinking: str | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2, sort_keys=True)
@@ -121,11 +128,14 @@ def generate_from_checkpoint(
     system_text: str | None = None,
     max_new_tokens: int = 64,
     device: str | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> CheckpointGenerationResult:
     """Checkpoint'ten greedy smoke generation yapar ve public output guard sonucunu dondurur."""
 
     if max_new_tokens < 1:
         raise ValueError("max_new_tokens pozitif olmali")
+    if runtime_config is not None:
+        runtime_config.validate()
     checkpoint = Path(checkpoint_dir)
     tokenizer_file = Path(tokenizer_path)
     validate_checkpoint_directory(checkpoint)
@@ -153,21 +163,26 @@ def generate_from_checkpoint(
     tokenizer = TokenizersGenerationAdapter(Tokenizer.from_file(str(tokenizer_file)))
     request = build_generation_request(build_checkpoint_messages(user_text, resolved_system_text), tokenizer)
     generated_ids = list(request.prompt_token_ids)
+    active_stop_token_ids = () if runtime_config is not None and runtime_config.safety_profile == "off" else request.stop_token_ids
+    stopped = False
     with torch.no_grad():
         for _ in range(max_new_tokens):
             input_ids = torch.tensor([generated_ids], dtype=torch.long, device=resolved_device)
             logits = model(input_ids).logits[:, -1, :]
             next_id = int(torch.argmax(logits, dim=-1).item())
             generated_ids.append(next_id)
-            if _ends_with_stop(generated_ids, request.stop_token_ids):
+            if active_stop_token_ids and _ends_with_stop(generated_ids, active_stop_token_ids):
+                stopped = True
                 break
-    guarded = decode_completion_from_ids(
+    guarded, raw_thinking = _render_checkpoint_completion(
         tokenizer,
         generated_ids,
         prompt_token_count=len(request.prompt_token_ids),
-        stop_token_ids=request.stop_token_ids,
+        stop_token_ids=active_stop_token_ids,
+        stopped=stopped,
         prompt_text=user_text,
         system_text=resolved_system_text,
+        runtime_config=runtime_config,
     )
     quality = assess_checkpoint_generation_quality(guarded.text, guarded.warnings)
     return CheckpointGenerationResult(
@@ -179,7 +194,46 @@ def generate_from_checkpoint(
         device=str(resolved_device),
         quality_ok=quality.ok,
         blocking_warnings=quality.blocking_warnings,
+        raw_thinking=raw_thinking,
     )
+
+
+def _render_checkpoint_completion(
+    tokenizer: TokenizersGenerationAdapter,
+    generated_ids: Sequence[int],
+    *,
+    prompt_token_count: int,
+    stop_token_ids: Sequence[Sequence[int]],
+    stopped: bool,
+    prompt_text: str,
+    system_text: str,
+    runtime_config: RuntimeConfig | None,
+) -> tuple[OutputGuardResult, str | None]:
+    if runtime_config is None:
+        guarded = decode_completion_from_ids(
+            tokenizer,
+            generated_ids,
+            prompt_token_count=prompt_token_count,
+            stop_token_ids=stop_token_ids,
+            prompt_text=prompt_text,
+            system_text=system_text,
+        )
+        return guarded, None
+
+    if runtime_config.safety_profile == "off":
+        completion_ids = tuple(int(token_id) for token_id in generated_ids[prompt_token_count:])
+    else:
+        completion_ids = trim_completion_token_ids(
+            generated_ids,
+            prompt_token_count=prompt_token_count,
+            stop_token_ids=stop_token_ids,
+        )
+    raw_text = tokenizer.decode(completion_ids, skip_special_tokens=False)
+    output = render_runtime_output(raw_text, runtime_config, prompt_text=prompt_text, system_text=system_text)
+    warnings = output.warnings
+    if stopped and "control_token_stop" not in warnings:
+        warnings = (*warnings, "control_token_stop")
+    return OutputGuardResult(text=output.public_text, warnings=warnings), output.raw_thinking
 
 
 def _ends_with_stop(token_ids: Sequence[int], stop_token_ids: Sequence[Sequence[int]]) -> bool:

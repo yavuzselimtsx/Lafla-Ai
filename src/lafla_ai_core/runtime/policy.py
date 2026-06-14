@@ -57,16 +57,24 @@ def render_runtime_output(
     """Ham model çıktısını public cevap ve opsiyonel developer thinking'e ayırır."""
 
     config.validate()
+    if config.safety_profile == "off":
+        diagnostic_text = clean_decoded_text(raw_text, strip_special_tokens=False)
+        thinking_sections = tuple(_extract_thinking(diagnostic_text))
+        return RuntimeOutput(
+            public_text=diagnostic_text,
+            raw_thinking=_render_raw_thinking(thinking_sections, config),
+            warnings=("safety_filters_disabled",),
+        )
+
     guarded = sanitize_completion(raw_text, prompt_text=prompt_text, system_text=system_text)
     thinking_sections = tuple(_extract_thinking(guarded.text))
     public_text = _normalize_public_text(clean_decoded_text(strip_thinking_for_public(guarded.text), strip_special_tokens=True))
     warnings = _merge_warnings(_runtime_warnings(raw_text, public_text, config), guarded.warnings)
-    raw_thinking = (
-        "\n\n".join(clean_decoded_text(section, strip_special_tokens=False) for section in thinking_sections).strip()
-        if config.raw_thinking_visible and thinking_sections
-        else None
+    return RuntimeOutput(
+        public_text=public_text,
+        raw_thinking=_render_raw_thinking(thinking_sections, config),
+        warnings=warnings,
     )
-    return RuntimeOutput(public_text=public_text, raw_thinking=raw_thinking, warnings=warnings)
 
 
 def build_generation_settings(config: RuntimeConfig) -> GenerationSettings:
@@ -88,6 +96,12 @@ def build_generation_settings(config: RuntimeConfig) -> GenerationSettings:
 def _extract_thinking(text: str) -> list[str]:
     pattern = re.escape(THINK_OPEN) + r"(.*?)" + re.escape(THINK_CLOSE)
     return [match.strip() for match in re.findall(pattern, text, flags=re.DOTALL) if match.strip()]
+
+
+def _render_raw_thinking(thinking_sections: tuple[str, ...], config: RuntimeConfig) -> str | None:
+    if not config.raw_thinking_visible or not thinking_sections:
+        return None
+    return "\n\n".join(clean_decoded_text(section, strip_special_tokens=False) for section in thinking_sections).strip()
 
 
 def _normalize_public_text(text: str) -> str:

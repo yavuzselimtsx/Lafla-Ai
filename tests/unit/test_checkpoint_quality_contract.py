@@ -209,6 +209,28 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertTrue(json.loads(stdout.getvalue())["quality_ok"])
 
+    def test_checkpoint_cli_passes_runtime_config_for_developer_diagnostics(self):
+        fake = FakeCliResult("<|user|>ham", ("safety_filters_disabled",), True, ())
+        stdout = io.StringIO()
+
+        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake) as generate:
+            with contextlib.redirect_stdout(stdout):
+                exit_code = checkpoint_cli_main(
+                    [
+                        "--checkpoint-dir",
+                        "ckpt",
+                        "--tokenizer-path",
+                        "tokenizer.json",
+                        "--runtime-config",
+                        "configs/runtime/developer-unguarded.yaml",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        runtime_config = generate.call_args.kwargs["runtime_config"]
+        self.assertEqual(runtime_config.safety_profile, "off")
+        self.assertTrue(json.loads(stdout.getvalue())["quality_ok"])
+
     def test_tokenizers_generation_adapter_disables_special_tokens_for_prompt_encoding(self):
         tokenizer = RecordingTokenizer()
         adapter = TokenizersGenerationAdapter(tokenizer)

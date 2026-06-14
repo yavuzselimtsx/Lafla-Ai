@@ -49,6 +49,14 @@ def _int_tuple(value: Any, key: str) -> tuple[int, ...]:
     return tuple(int(item) for item in value)
 
 
+def _runtime_safety_profile(value: Any) -> str:
+    """YAML 1.1 'off' kelimesini boolean False olarak okuyabilir."""
+
+    if value is False:
+        return "off"
+    return str(value)
+
+
 @dataclass(frozen=True)
 class RopeScalingConfig:
     """Uzun baglam icin RoPE konum olcekleme sozlesmesi."""
@@ -436,7 +444,7 @@ class RuntimeConfig:
             thinking_budget_tokens=int(runtime.get("thinking_budget_tokens", 192)),
             developer_mode=bool(runtime.get("developer_mode", False)),
             raw_thinking_visible=bool(runtime.get("raw_thinking_visible", False)),
-            safety_profile=str(runtime.get("safety_profile", "standard")),
+            safety_profile=_runtime_safety_profile(runtime.get("safety_profile", "standard")),
             context_overflow_strategy=str(runtime.get("context_overflow_strategy", "sliding_window")),
             system_prompt_leak_guard=bool(runtime.get("system_prompt_leak_guard", True)),
             turkish_quality_guard=bool(runtime.get("turkish_quality_guard", True)),
@@ -467,7 +475,7 @@ class RuntimeConfig:
         _require(self.memory_budget_gb > 0, "memory_budget_gb pozitif olmali")
         _require(self.thinking_effort in {"low", "medium", "high"}, "desteklenmeyen thinking_effort")
         _require(0 <= self.thinking_budget_tokens <= 4096, "thinking_budget_tokens guvenli aralik disinda")
-        _require(self.safety_profile in {"standard", "research"}, "desteklenmeyen safety_profile")
+        _require(self.safety_profile in {"standard", "research", "off"}, "desteklenmeyen safety_profile")
         _require(
             self.context_overflow_strategy in {"truncate_oldest", "sliding_window", "summarize_then_slide"},
             "desteklenmeyen context_overflow_strategy",
@@ -504,9 +512,14 @@ class RuntimeConfig:
             _require(self.output_reserve_tokens >= self.max_new_tokens, "output_reserve_tokens max_new_tokens altinda olamaz")
         if self.raw_thinking_visible:
             _require(self.developer_mode, "raw_thinking_visible icin developer_mode zorunlu")
-            _require(self.safety_profile == "research", "raw_thinking_visible yalniz research profilinde acilir")
+            _require(
+                self.safety_profile in {"research", "off"},
+                "raw_thinking_visible yalniz research veya off profilinde acilir",
+            )
         if self.safety_profile == "research":
             _require(self.developer_mode, "research safety_profile icin developer_mode zorunlu")
+        if self.safety_profile == "off":
+            _require(self.developer_mode, "off safety_profile icin developer_mode zorunlu")
 
 
 @dataclass(frozen=True)
