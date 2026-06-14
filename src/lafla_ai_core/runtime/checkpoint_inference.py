@@ -35,6 +35,7 @@ BLOCKING_CHECKPOINT_WARNINGS = (
     "empty_after_output_guard",
     "possible_prompt_leak",
     "possible_mojibake",
+    "safety_filters_disabled",
 )
 
 

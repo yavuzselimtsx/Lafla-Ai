@@ -117,6 +117,12 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertTrue(assessment.ok)
         self.assertEqual(assessment.blocking_warnings, ())
 
+    def test_safety_filters_disabled_blocks_release_quality(self):
+        assessment = assess_checkpoint_generation_quality("raw diagnostic text", ("safety_filters_disabled",))
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("safety_filters_disabled",))
+
     def test_prompt_echo_removed_is_not_blocking_when_answer_survives(self):
         assessment = assess_checkpoint_generation_quality("4", ("prompt_echo_removed",))
 
