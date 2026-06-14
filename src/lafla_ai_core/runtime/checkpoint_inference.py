@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -65,6 +66,9 @@ class CheckpointGenerationResult:
     blocking_warnings: tuple[str, ...]
     raw_thinking: str | None = None
     quality_scope: str = "structural"
+    decode_temperature: float = 0.0
+    decode_top_k: int = 0
+    seed: int | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2, sort_keys=True)
@@ -172,11 +176,18 @@ def generate_from_checkpoint(
     device: str | None = None,
     runtime_config: RuntimeConfig | None = None,
     expected_patterns: Sequence[str] = (),
+    temperature: float = 0.0,
+    top_k: int = 0,
+    seed: int | None = None,
 ) -> CheckpointGenerationResult:
-    """Checkpoint'ten greedy smoke generation yapar ve public output guard sonucunu dondurur."""
+    """Checkpoint'ten smoke generation yapar ve public output guard sonucunu dondurur."""
 
     if max_new_tokens < 1:
         raise ValueError("max_new_tokens pozitif olmali")
+    if not math.isfinite(temperature) or temperature < 0.0:
+        raise ValueError("temperature sifir veya pozitif sonlu sayi olmali")
+    if top_k < 0:
+        raise ValueError("top_k negatif olamaz")
     if runtime_config is not None:
         runtime_config.validate()
     checkpoint = Path(checkpoint_dir)
@@ -202,6 +213,10 @@ def generate_from_checkpoint(
     model = LaflaDecoderModel(model_config).to(resolved_device)
     model.load_state_dict(torch.load(checkpoint / "model.pt", map_location=resolved_device))
     model.eval()
+    if seed is not None:
+        torch.manual_seed(seed)
+        if resolved_device.type == "cuda":
+            torch.cuda.manual_seed_all(seed)
 
     tokenizer = TokenizersGenerationAdapter(Tokenizer.from_file(str(tokenizer_file)))
     request = build_generation_request(build_checkpoint_messages(user_text, resolved_system_text), tokenizer)
@@ -212,7 +227,7 @@ def generate_from_checkpoint(
         for _ in range(max_new_tokens):
             input_ids = torch.tensor([generated_ids], dtype=torch.long, device=resolved_device)
             logits = model(input_ids).logits[:, -1, :]
-            next_id = int(torch.argmax(logits, dim=-1).item())
+            next_id = _select_next_token_id(logits, temperature=temperature, top_k=top_k)
             generated_ids.append(next_id)
             if active_stop_token_ids and _ends_with_stop(generated_ids, active_stop_token_ids):
                 stopped = True
@@ -244,7 +259,24 @@ def generate_from_checkpoint(
         blocking_warnings=quality.blocking_warnings,
         raw_thinking=raw_thinking,
         quality_scope="semantic" if expected_patterns else "structural",
+        decode_temperature=temperature,
+        decode_top_k=top_k,
+        seed=seed,
     )
+
+
+def _select_next_token_id(logits, *, temperature: float, top_k: int) -> int:
+    if temperature == 0.0:
+        return int(logits.argmax(dim=-1).item())
+    scaled = logits / temperature
+    if top_k > 0:
+        k = min(int(top_k), int(scaled.shape[-1]))
+        values, indices = scaled.topk(k, dim=-1)
+        probabilities = values.softmax(dim=-1)
+        sampled = probabilities.multinomial(num_samples=1)
+        return int(indices.gather(-1, sampled).item())
+    probabilities = scaled.softmax(dim=-1)
+    return int(probabilities.multinomial(num_samples=1).item())
 
 
 def _render_checkpoint_completion(

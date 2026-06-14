@@ -311,6 +311,32 @@ class CheckpointQualityContractTest(unittest.TestCase):
             ("LaflaGPT Mini", r"2\s*\+\s*2\s*=\s*4"),
         )
 
+    def test_checkpoint_cli_passes_sampling_controls(self):
+        fake = FakeCliResult("cevap", (), True, ())
+        stdout = io.StringIO()
+
+        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake) as generate:
+            with contextlib.redirect_stdout(stdout):
+                exit_code = checkpoint_cli_main(
+                    [
+                        "--checkpoint-dir",
+                        "ckpt",
+                        "--tokenizer-path",
+                        "tokenizer.json",
+                        "--temperature",
+                        "0.8",
+                        "--top-k",
+                        "40",
+                        "--seed",
+                        "1234",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(generate.call_args.kwargs["temperature"], 0.8)
+        self.assertEqual(generate.call_args.kwargs["top_k"], 40)
+        self.assertEqual(generate.call_args.kwargs["seed"], 1234)
+
     def test_tokenizers_generation_adapter_disables_special_tokens_for_prompt_encoding(self):
         tokenizer = RecordingTokenizer()
         adapter = TokenizersGenerationAdapter(tokenizer)

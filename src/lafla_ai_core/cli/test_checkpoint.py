@@ -25,6 +25,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device")
     parser.add_argument("--runtime-config")
     parser.add_argument("--expect-regex", action="append", default=[])
+    parser.add_argument("--temperature", type=float, default=0.0)
+    parser.add_argument("--top-k", type=int, default=0)
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
     runtime_config = RuntimeConfig.from_mapping(load_mapping(args.runtime_config)) if args.runtime_config else None
     if runtime_config is not None:
@@ -38,6 +41,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         device=args.device,
         runtime_config=runtime_config,
         expected_patterns=tuple(args.expect_regex),
+        temperature=args.temperature,
+        top_k=args.top_k,
+        seed=args.seed,
     )
     print(result.to_json())
     return 0 if result.quality_ok else 2
