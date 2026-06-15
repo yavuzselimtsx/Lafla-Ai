@@ -1,5 +1,5 @@
 """
-Prepare real, deduplicated LaflaGPT 380M training JSONL on Lightning.ai.
+Prepare real, deduplicated LaflaGPT training JSONL on hosted GPU runtimes.
 
 This script never fabricates bootstrap data. It streams real or owned sources,
 applies lightweight quality filters, deduplicates normalized records, and writes
@@ -25,19 +25,6 @@ from lafla_ai_core.tokenizer.quality import validate_clean_text
 
 DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
     {
-        "source_id": "fineweb2_turkish",
-        "path": "HuggingFaceFW/fineweb-2",
-        "name": "tur_Latn",
-        "split": "train",
-        "license": "ODC-By-1.0",
-        "language": "tr",
-        "domain": "turkish",
-        "usage": "pretraining",
-        "trust_tier": "primary",
-        "source_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
-        "target_share": 0.31,
-    },
-    {
         "source_id": "fineweb2_hq_turkish",
         "path": "epfml/FineWeb2-HQ",
         "name": "tur_Latn",
@@ -48,7 +35,46 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
         "usage": "pretraining",
         "trust_tier": "primary",
         "source_url": "https://huggingface.co/datasets/epfml/FineWeb2-HQ",
-        "target_share": 0.16,
+        "target_share": 0.28,
+    },
+    {
+        "source_id": "fineweb2_turkish",
+        "path": "HuggingFaceFW/fineweb-2",
+        "name": "tur_Latn",
+        "split": "train",
+        "license": "ODC-By-1.0",
+        "language": "tr",
+        "domain": "turkish",
+        "usage": "pretraining",
+        "trust_tier": "primary",
+        "source_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
+        "target_share": 0.14,
+    },
+    {
+        "source_id": "fineweb2_hq_german",
+        "path": "epfml/FineWeb2-HQ",
+        "name": "deu_Latn",
+        "split": "train",
+        "license": "ODC-By-1.0",
+        "language": "de",
+        "domain": "german",
+        "usage": "pretraining",
+        "trust_tier": "primary",
+        "source_url": "https://huggingface.co/datasets/epfml/FineWeb2-HQ",
+        "target_share": 0.15,
+    },
+    {
+        "source_id": "fineweb2_german",
+        "path": "HuggingFaceFW/fineweb-2",
+        "name": "deu_Latn",
+        "split": "train",
+        "license": "ODC-By-1.0",
+        "language": "de",
+        "domain": "german",
+        "usage": "pretraining",
+        "trust_tier": "primary",
+        "source_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
+        "target_share": 0.08,
     },
     {
         "source_id": "wikimedia_tr",
@@ -61,11 +87,24 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
         "usage": "pretraining",
         "trust_tier": "primary",
         "source_url": "https://huggingface.co/datasets/wikimedia/wikipedia",
-        "target_share": 0.07,
+        "target_share": 0.05,
     },
     {
-        "source_id": "fineweb2_english",
-        "path": "HuggingFaceFW/fineweb-2",
+        "source_id": "wikimedia_german_history",
+        "path": "wikimedia/wikipedia",
+        "name": "20231101.de",
+        "split": "train",
+        "license": "CC-BY-SA-3.0/GFDL",
+        "language": "de",
+        "domain": "german",
+        "usage": "pretraining",
+        "trust_tier": "primary",
+        "source_url": "https://huggingface.co/datasets/wikimedia/wikipedia",
+        "target_share": 0.05,
+    },
+    {
+        "source_id": "fineweb2_hq_english",
+        "path": "epfml/FineWeb2-HQ",
         "name": "eng_Latn",
         "split": "train",
         "license": "ODC-By-1.0",
@@ -73,8 +112,8 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
         "domain": "english",
         "usage": "pretraining",
         "trust_tier": "secondary",
-        "source_url": "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2",
-        "target_share": 0.11,
+        "source_url": "https://huggingface.co/datasets/epfml/FineWeb2-HQ",
+        "target_share": 0.10,
     },
     {
         "source_id": "open_web_math",
@@ -86,7 +125,7 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
         "usage": "pretraining",
         "trust_tier": "review",
         "source_url": "https://huggingface.co/datasets/open-web-math/open-web-math",
-        "target_share": 0.11,
+        "target_share": 0.08,
     },
     {
         "source_id": "the_stack_smol_python",
@@ -99,50 +138,30 @@ DEFAULT_SOURCE_SPECS: tuple[dict[str, Any], ...] = (
         "usage": "pretraining",
         "trust_tier": "review",
         "source_url": "https://huggingface.co/datasets/bigcode/the-stack-smol",
-        "target_share": 0.08,
-    },
-    {
-        "source_id": "security_docs_local_reviewed",
-        "local_path": "configs/data/security-docs-local.jsonl",
-        "license": "source_specific_review_required",
-        "language": "tr",
-        "domain": "cybersecurity",
-        "usage": "pretraining",
-        "trust_tier": "review",
-        "source_url": "local://configs/data/security-docs-local.jsonl",
-        "target_share": 0.04,
-        "optional": True,
-    },
-    {
-        "source_id": "aya_dataset_turkish_instruction",
-        "path": "CohereLabs/aya_dataset",
-        "split": "train",
-        "license": "Apache-2.0",
-        "language": "tr",
-        "domain": "turkish",
-        "usage": "instruction",
-        "trust_tier": "primary",
-        "source_url": "https://huggingface.co/datasets/CohereLabs/aya_dataset",
-        "target_share": 0.05,
-        "pii_cleaned": True,
-    },
-    {
-        "source_id": "lafla_identity_380m",
-        "local_path": "__IDENTITY_JSONL__",
-        "license": "lafla-owned",
-        "language": "tr",
-        "domain": "identity",
-        "usage": "instruction",
-        "trust_tier": "owned",
-        "source_url": "local://configs/data/identity/lafla-model-identity-380m.jsonl",
         "target_share": 0.07,
-        "pii_cleaned": True,
+        "optional": True,
     },
 )
 
 TURKISH_LETTERS = set("abcdefghijklmnopqrstuvwxyz" + "\u00e7\u011f\u0131\u00f6\u015f\u00fc")
 TURKISH_COMMON = (" ve ", " bir ", " icin ", " i\u00e7in ", " olan ", " olarak ", " ile ", " daha ")
 ENGLISH_COMMON = (" the ", " and ", " for ", " with ", " from ", " this ", " that ", " model ")
+GERMAN_LETTERS = set("abcdefghijklmnopqrstuvwxyz" + "\u00e4\u00f6\u00fc\u00df")
+GERMAN_COMMON = (
+    " der ",
+    " die ",
+    " das ",
+    " und ",
+    " ist ",
+    " mit ",
+    " nicht ",
+    " auf ",
+    " fuer ",
+    " f\u00fcr ",
+    " eine ",
+    " einem ",
+    " deutsch ",
+)
 CODE_HINTS = ("def ", "class ", "import ", "return ", "function ", "const ", "let ", "if ", "for ", "while ")
 MATH_HINTS = (" theorem", " proof", " equation", " integral", " matrix", " probability", " function", " variable")
 SECURITY_HINTS = (
@@ -168,7 +187,7 @@ class SourceReport:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepare real LaflaGPT 380M JSONL data on Lightning")
+    parser = argparse.ArgumentParser(description="Prepare real LaflaGPT JSONL data on hosted GPU runtimes")
     parser.add_argument("--output", default="/teamspace/studios/this_studio/LaflaAI380M/data/train.jsonl")
     parser.add_argument("--manifest", default="/teamspace/studios/this_studio/LaflaAI380M/data/veri_manifesti.json")
     parser.add_argument("--report", default="/teamspace/studios/this_studio/LaflaAI380M/reports/data-prepare-report.json")
@@ -413,7 +432,9 @@ def passes_domain_signal(text: str, spec: Mapping[str, Any]) -> bool:
         return has_turkish_signal(text)
     if language == "en":
         return has_english_signal(text)
-    return has_turkish_signal(text) or has_english_signal(text)
+    if language == "de":
+        return has_german_signal(text)
+    return has_turkish_signal(text) or has_english_signal(text) or has_german_signal(text)
 
 
 def has_turkish_signal(text: str) -> bool:
@@ -436,6 +457,19 @@ def has_english_signal(text: str) -> bool:
     if letters == 0 or ascii_letters / letters < 0.82:
         return False
     return sum(1 for token in ENGLISH_COMMON if token in lowered) >= 2
+
+
+def has_german_signal(text: str) -> bool:
+    lowered = f" {text.lower()} "
+    letters = sum(1 for char in lowered if char.isalpha())
+    if letters == 0:
+        return False
+    known_letters = sum(1 for char in lowered if char in GERMAN_LETTERS)
+    if known_letters / letters < 0.82:
+        return False
+    common_hits = sum(1 for token in GERMAN_COMMON if token in lowered)
+    has_specific_char = any(char in lowered for char in "\u00e4\u00f6\u00fc\u00df")
+    return common_hits >= 2 or (common_hits >= 1 and has_specific_char)
 
 
 def looks_like_code(text: str) -> bool:

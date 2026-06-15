@@ -19,6 +19,40 @@ def _load_prepare_real_data_module():
 
 
 class PrepareRealDataTest(unittest.TestCase):
+    def test_default_sources_include_100m_german_pretraining_sources(self):
+        module = _load_prepare_real_data_module()
+
+        german_ids = {
+            spec["source_id"]
+            for spec in module.DEFAULT_SOURCE_SPECS
+            if spec.get("language") == "de" and spec.get("usage") == "pretraining"
+        }
+
+        self.assertGreaterEqual(
+            german_ids,
+            {"fineweb2_hq_german", "fineweb2_german", "wikimedia_german_history"},
+        )
+
+    def test_german_language_signal_accepts_german_and_rejects_plain_english(self):
+        module = _load_prepare_real_data_module()
+        german = (
+            "Der Nutzer stellt eine klare Frage und das Modell antwortet auf Deutsch "
+            "mit begruendeten Schritten, weil die Quelle verlaesslich und der Kontext "
+            "ausreichend lang ist. Diese Antwort bleibt sachlich, praezise und hilfreich."
+        )
+        english = (
+            "The user asks a clear question and the model answers with careful steps "
+            "because the source is reliable and the context is long enough for reasoning."
+        )
+
+        self.assertTrue(module.passes_domain_signal(german, {"domain": "german", "language": "de"}))
+        self.assertFalse(module.passes_domain_signal(english, {"domain": "german", "language": "de"}))
+
+    def test_default_real_corpus_does_not_embed_identity_seed(self):
+        module = _load_prepare_real_data_module()
+
+        self.assertFalse(any(spec["source_id"].startswith("lafla_identity") for spec in module.DEFAULT_SOURCE_SPECS))
+
     def test_clean_text_rejects_tokenizer_mojibake_markers_before_jsonl_write(self):
         module = _load_prepare_real_data_module()
         text = (
