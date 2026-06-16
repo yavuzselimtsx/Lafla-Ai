@@ -86,12 +86,16 @@ class ThinkingSftIterableDataset(IterableDataset):
         config: PostTrainingConfig,
         *,
         pad_id: int,
+        seed: int,
+        shuffle_buffer_size: int,
     ) -> None:
         super().__init__()
         self.paths = tuple(str(path) for path in paths)
         self.tokenizer_path = str(tokenizer_path)
         self.config = config
         self.pad_id = pad_id
+        self.seed = seed
+        self.shuffle_buffer_size = shuffle_buffer_size
 
     def __iter__(self) -> Iterable[tuple[object, object]]:
         torch_module = _require_torch()
@@ -102,6 +106,11 @@ class ThinkingSftIterableDataset(IterableDataset):
                 tokenizer,
                 self.config,
                 validate_inputs=False,
+            )
+            examples = iter_buffer_shuffled(
+                examples,
+                seed=self.seed + _epoch,
+                buffer_size=self.shuffle_buffer_size,
             )
             for example in examples:
                 padded = pad_or_truncate_example(
@@ -147,6 +156,30 @@ def iter_supervised_thinking_examples(
             )
 
 
+def iter_buffer_shuffled(
+    items: Iterable[object],
+    *,
+    seed: int,
+    buffer_size: int,
+) -> Iterable[object]:
+    """Buyuk dosyayi bellekte tamamen tutmadan deterministik karistirir."""
+
+    if buffer_size <= 1:
+        yield from items
+        return
+    rng = random.Random(seed)
+    buffer: list[object] = []
+    for item in items:
+        buffer.append(item)
+        if len(buffer) < buffer_size:
+            continue
+        selected = rng.randrange(len(buffer))
+        yield buffer.pop(selected)
+    while buffer:
+        selected = rng.randrange(len(buffer))
+        yield buffer.pop(selected)
+
+
 def pad_or_truncate_example(
     input_ids: Sequence[int],
     labels: Sequence[int],
@@ -184,6 +217,7 @@ def run_thinking_sft(
     weight_decay: float = 0.0,
     grad_clip_norm: float = 1.0,
     seed: int = 1337,
+    shuffle_buffer_size: int = 4096,
 ) -> ThinkingSftTrainingSummary:
     """Kaynak checkpointten ayri bir thinking SFT checkpoint uretir."""
 
@@ -195,6 +229,8 @@ def run_thinking_sft(
         raise ValueError("gradient_accumulation_steps pozitif olmali")
     if max_steps < 0:
         raise ValueError("max_steps negatif olamaz")
+    if shuffle_buffer_size < 0:
+        raise ValueError("shuffle_buffer_size negatif olamaz")
     if precision not in {"fp16", "bf16", "fp32"}:
         raise ValueError("desteklenmeyen precision")
     _validate_data_files(paths.data_jsonl, config)
@@ -223,7 +259,14 @@ def run_thinking_sft(
         lr=config.learning_rate,
         betas=(0.9, 0.95),
     )
-    dataset = ThinkingSftIterableDataset(paths.data_jsonl, paths.tokenizer_path, config, pad_id=pad_id)
+    dataset = ThinkingSftIterableDataset(
+        paths.data_jsonl,
+        paths.tokenizer_path,
+        config,
+        pad_id=pad_id,
+        seed=seed,
+        shuffle_buffer_size=shuffle_buffer_size,
+    )
     if DataLoader is None:
         raise ModuleNotFoundError("thinking SFT egitimi icin torch kurulu olmali")
     loader = DataLoader(
@@ -283,6 +326,7 @@ def run_thinking_sft(
                 "sequence_length": config.sequence_length,
                 "micro_batch_size": micro_batch_size,
                 "gradient_accumulation_steps": gradient_accumulation_steps,
+                "shuffle_buffer_size": shuffle_buffer_size,
                 "total_examples": total_examples,
                 "tokens_seen": tokens_seen,
                 "elapsed_seconds": round(time.time() - started, 3),
