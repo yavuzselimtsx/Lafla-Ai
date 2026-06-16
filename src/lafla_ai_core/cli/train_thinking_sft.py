@@ -40,6 +40,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument("--shuffle-buffer-size", type=int, default=4096)
     args = parser.parse_args(argv)
 
     _require_existing(args.checkpoint_dir, "checkpoint")
@@ -70,6 +71,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         weight_decay=args.weight_decay,
         grad_clip_norm=args.grad_clip_norm,
         seed=args.seed,
+        shuffle_buffer_size=args.shuffle_buffer_size,
     )
     print(json.dumps(asdict(summary), ensure_ascii=False, indent=2, sort_keys=True))
     return 0

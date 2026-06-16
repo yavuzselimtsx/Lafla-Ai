@@ -6,6 +6,7 @@ from pathlib import Path
 from lafla_ai_core.config.schema import PostTrainingConfig
 from lafla_ai_core.post_training.thinking_trainer import (
     build_sft_trainer_state,
+    iter_buffer_shuffled,
     iter_supervised_thinking_examples,
     pad_or_truncate_example,
 )
@@ -87,6 +88,14 @@ class ThinkingSftTrainerTest(unittest.TestCase):
         self.assertEqual(state["total_examples"], 100)
         self.assertEqual(state["tokens_seen"], 2048)
         self.assertEqual(state["post_training"]["stage"], "thinking_sft")
+
+    def test_buffer_shuffle_is_deterministic_and_keeps_all_examples(self):
+        first = list(iter_buffer_shuffled(range(20), seed=42, buffer_size=5))
+        second = list(iter_buffer_shuffled(range(20), seed=42, buffer_size=5))
+
+        self.assertEqual(first, second)
+        self.assertEqual(sorted(first), list(range(20)))
+        self.assertNotEqual(first[:5], list(range(5)))
 
 
 if __name__ == "__main__":
