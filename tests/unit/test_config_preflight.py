@@ -143,6 +143,15 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertEqual(config.stage, "thinking_sft")
         self.assertFalse(config.public_thinking_visible)
 
+    def test_chat_sft_config_supervises_public_answer_only(self):
+        path = Path("configs/post_training/lafla-chat-sft.yaml")
+        config = PostTrainingConfig.from_mapping(load_mapping(path))
+        config.validate()
+        self.assertEqual(config.stage, "thinking_sft")
+        self.assertEqual(config.label_policy, "assistant_only")
+        self.assertEqual(config.epochs, 1)
+        self.assertFalse(config.public_thinking_visible)
+
     def test_developer_runtime_allows_raw_thinking_only_in_research_mode(self):
         path = Path("configs/runtime/developer-research.yaml")
         config = RuntimeConfig.from_mapping(load_mapping(path))
