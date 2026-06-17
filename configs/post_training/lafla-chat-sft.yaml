@@ -1,0 +1,11 @@
+# Lafla chat SFT profile for early checkpoints.
+# This teaches prompt following and clean assistant answers before full thinking SFT.
+post_training:
+  stage: thinking_sft
+  sequence_length: 512
+  learning_rate: 0.000012
+  epochs: 1
+  label_policy: assistant_only
+  only_last_assistant: true
+  public_thinking_visible: false
+  max_thinking_chars: 4000
