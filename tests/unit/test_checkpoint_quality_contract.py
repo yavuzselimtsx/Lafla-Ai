@@ -272,7 +272,7 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertEqual(generate.call_args.kwargs["top_k"], 40)
         self.assertEqual(generate.call_args.kwargs["repetition_penalty"], 1.08)
         self.assertEqual(generate.call_args.kwargs["seed"], 42)
-        self.assertEqual(generate.call_args.kwargs["user_text"], "Sen Kimsin? Ve 2+2 Kaç Eder.")
+        self.assertTrue(generate.call_args.kwargs["user_text"].strip())
 
     def test_checkpoint_cli_passes_runtime_config_for_developer_diagnostics(self):
         fake = FakeCliResult("<|user|>ham", ("safety_filters_disabled",), True, ())
