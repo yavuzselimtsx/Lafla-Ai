@@ -43,6 +43,19 @@ class RuntimeOutputGuardTest(unittest.TestCase):
         self.assertIn("prompt_echo_removed", output.warnings)
         self.assertIn("control_token_stop", output.warnings)
 
+    def test_closed_thinking_block_is_hidden_from_public_output(self):
+        result = sanitize_completion("<|think|>gizli karar adımları<|/think|>\nAnkara")
+
+        self.assertEqual(result.text, "Ankara")
+        self.assertIn("thinking_block_stripped", result.warnings)
+
+    def test_unclosed_thinking_block_is_fail_closed(self):
+        result = sanitize_completion("<|think|>Karar adımları: güvenli alternatif sun. Varyant 0")
+
+        self.assertEqual(result.text, "")
+        self.assertIn("unclosed_thinking_block", result.warnings)
+        self.assertIn("empty_after_output_guard", result.warnings)
+
     def test_generation_settings_expose_role_stop_sequences(self):
         config = RuntimeConfig.from_mapping(load_mapping("configs/runtime/desktop-cpu-4bit.yaml"))
         settings = build_generation_settings(config)

@@ -40,6 +40,7 @@ BLOCKING_CHECKPOINT_WARNINGS = (
     "safety_filters_disabled",
     "smoke_answer_drift",
     "expected_answer_missing",
+    "unclosed_thinking_block",
 )
 
 
@@ -68,6 +69,7 @@ class CheckpointGenerationResult:
     quality_scope: str = "structural"
     decode_temperature: float = 0.0
     decode_top_k: int = 0
+    decode_repetition_penalty: float = 1.0
     seed: int | None = None
 
     def to_json(self) -> str:
@@ -178,6 +180,7 @@ def generate_from_checkpoint(
     expected_patterns: Sequence[str] = (),
     temperature: float = 0.0,
     top_k: int = 0,
+    repetition_penalty: float = 1.0,
     seed: int | None = None,
 ) -> CheckpointGenerationResult:
     """Checkpoint'ten smoke generation yapar ve public output guard sonucunu dondurur."""
@@ -188,6 +191,8 @@ def generate_from_checkpoint(
         raise ValueError("temperature sifir veya pozitif sonlu sayi olmali")
     if top_k < 0:
         raise ValueError("top_k negatif olamaz")
+    if not math.isfinite(repetition_penalty) or repetition_penalty < 1.0:
+        raise ValueError("repetition_penalty en az 1.0 olmali")
     if runtime_config is not None:
         runtime_config.validate()
     checkpoint = Path(checkpoint_dir)
@@ -227,6 +232,7 @@ def generate_from_checkpoint(
         for _ in range(max_new_tokens):
             input_ids = torch.tensor([generated_ids], dtype=torch.long, device=resolved_device)
             logits = model(input_ids).logits[:, -1, :]
+            _apply_repetition_penalty(logits, generated_ids, repetition_penalty=repetition_penalty)
             next_id = _select_next_token_id(logits, temperature=temperature, top_k=top_k)
             generated_ids.append(next_id)
             if active_stop_token_ids and _ends_with_stop(generated_ids, active_stop_token_ids):
@@ -261,8 +267,18 @@ def generate_from_checkpoint(
         quality_scope="semantic" if expected_patterns else "structural",
         decode_temperature=temperature,
         decode_top_k=top_k,
+        decode_repetition_penalty=repetition_penalty,
         seed=seed,
     )
+
+
+def _apply_repetition_penalty(logits, generated_ids: Sequence[int], *, repetition_penalty: float) -> None:
+    if repetition_penalty == 1.0:
+        return
+    for token_id in set(int(value) for value in generated_ids):
+        token_logit = logits[:, token_id]
+        logits[:, token_id] = token_logit.where(token_logit < 0, token_logit / repetition_penalty)
+        logits[:, token_id] = logits[:, token_id].where(token_logit >= 0, token_logit * repetition_penalty)
 
 
 def _select_next_token_id(logits, *, temperature: float, top_k: int) -> int:

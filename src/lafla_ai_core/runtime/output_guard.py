@@ -20,6 +20,8 @@ from lafla_ai_core.tokenizer.quality import has_mojibake
 
 ROLE_STOP_SEQUENCES = ("<|eos|>", "<|user|>", "<|system|>", "<|assistant|>", "<|bos|>", "<|pad|>")
 _ROLE_MARKERS = ("<|system|>", "<|user|>", "<|assistant|>", "<|bos|>", "<|pad|>")
+_THINK_OPEN = "<|think|>"
+_THINK_CLOSE = "<|/think|>"
 _BYTELEVEL_SURFACE_MARKERS = ("\u0120", "\u010a", "\u00c4\u00a0", "\u00c4\u0160")
 _PUNCT_SPACE_RE = re.compile(r"\s+([?.!,;:])")
 
@@ -47,6 +49,8 @@ def sanitize_completion(raw_text: str, *, prompt_text: str | None = None, system
     completion, stopped = _truncate_at_later_stop_sequence(completion)
     if stopped:
         warnings.append("control_token_stop")
+    completion, thinking_warnings = _strip_thinking_blocks(completion)
+    warnings.extend(thinking_warnings)
 
     cleaned = clean_decoded_text(completion, strip_special_tokens=False)
     if had_mojibake and not has_mojibake(cleaned):
@@ -68,6 +72,26 @@ def sanitize_completion(raw_text: str, *, prompt_text: str | None = None, system
         warnings.append("empty_after_output_guard")
 
     return OutputGuardResult(text=cleaned, warnings=_dedupe(warnings))
+
+
+def _strip_thinking_blocks(text: str) -> tuple[str, tuple[str, ...]]:
+    warnings: list[str] = []
+    output: list[str] = []
+    cursor = 0
+    while True:
+        start = text.find(_THINK_OPEN, cursor)
+        if start == -1:
+            output.append(text[cursor:])
+            break
+        output.append(text[cursor:start])
+        end = text.find(_THINK_CLOSE, start + len(_THINK_OPEN))
+        if end == -1:
+            warnings.append("unclosed_thinking_block")
+            cursor = len(text)
+            break
+        warnings.append("thinking_block_stripped")
+        cursor = end + len(_THINK_CLOSE)
+    return "".join(output), tuple(warnings)
 
 
 def _slice_after_generation_prompt(text: str) -> tuple[str, str | None]:

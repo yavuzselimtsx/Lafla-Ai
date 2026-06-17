@@ -66,8 +66,9 @@ def render_runtime_output(
             warnings=("safety_filters_disabled",),
         )
 
+    raw_clean = clean_decoded_text(raw_text, strip_special_tokens=False)
+    thinking_sections = tuple(_extract_thinking(raw_clean))
     guarded = sanitize_completion(raw_text, prompt_text=prompt_text, system_text=system_text)
-    thinking_sections = tuple(_extract_thinking(guarded.text))
     public_text = _normalize_public_text(clean_decoded_text(strip_thinking_for_public(guarded.text), strip_special_tokens=True))
     warnings = _merge_warnings(_runtime_warnings(raw_text, public_text, config), guarded.warnings)
     return RuntimeOutput(
