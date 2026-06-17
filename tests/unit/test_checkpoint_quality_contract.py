@@ -117,6 +117,12 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertFalse(assessment.ok)
         self.assertIn("empty_after_output_guard", assessment.blocking_warnings)
 
+    def test_unclosed_thinking_block_warning_blocks_checkpoint(self):
+        assessment = assess_checkpoint_generation_quality("", ("unclosed_thinking_block",))
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("unclosed_thinking_block", "empty_public_text"))
+
     def test_empty_public_text_blocks_without_warning(self):
         assessment = assess_checkpoint_generation_quality("", ())
 
@@ -262,6 +268,10 @@ class CheckpointQualityContractTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertTrue(json.loads(stdout.getvalue())["quality_ok"])
+        self.assertEqual(generate.call_args.kwargs["temperature"], 0.8)
+        self.assertEqual(generate.call_args.kwargs["top_k"], 40)
+        self.assertEqual(generate.call_args.kwargs["repetition_penalty"], 1.08)
+        self.assertEqual(generate.call_args.kwargs["seed"], 42)
         self.assertEqual(generate.call_args.kwargs["user_text"], "Sen Kimsin? Ve 2+2 Kaç Eder.")
 
     def test_checkpoint_cli_passes_runtime_config_for_developer_diagnostics(self):
@@ -327,6 +337,8 @@ class CheckpointQualityContractTest(unittest.TestCase):
                         "0.8",
                         "--top-k",
                         "40",
+                        "--repetition-penalty",
+                        "1.12",
                         "--seed",
                         "1234",
                     ]
@@ -335,6 +347,7 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(generate.call_args.kwargs["temperature"], 0.8)
         self.assertEqual(generate.call_args.kwargs["top_k"], 40)
+        self.assertEqual(generate.call_args.kwargs["repetition_penalty"], 1.12)
         self.assertEqual(generate.call_args.kwargs["seed"], 1234)
 
     def test_tokenizers_generation_adapter_disables_special_tokens_for_prompt_encoding(self):

@@ -25,9 +25,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device")
     parser.add_argument("--runtime-config")
     parser.add_argument("--expect-regex", action="append", default=[])
-    parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--top-k", type=int, default=0)
-    parser.add_argument("--seed", type=int)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-k", type=int, default=40)
+    parser.add_argument("--repetition-penalty", type=float, default=1.08)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args(argv)
     runtime_config = RuntimeConfig.from_mapping(load_mapping(args.runtime_config)) if args.runtime_config else None
     if runtime_config is not None:
@@ -43,6 +44,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         expected_patterns=tuple(args.expect_regex),
         temperature=args.temperature,
         top_k=args.top_k,
+        repetition_penalty=args.repetition_penalty,
         seed=args.seed,
     )
     print(result.to_json())
