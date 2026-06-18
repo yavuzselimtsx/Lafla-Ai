@@ -11,6 +11,8 @@ class DirectoryLayoutTest(unittest.TestCase):
         self.assertTrue((datasets / "evaluation").is_dir())
 
         expected_post_training_dirs = {
+            Path("datasets/post_training/chat/jsonl"),
+            Path("datasets/post_training/chat/manifests"),
             Path("datasets/post_training/thinking/jsonl"),
             Path("datasets/post_training/thinking/manifests"),
             Path("datasets/post_training/safety/jsonl"),
@@ -18,6 +20,9 @@ class DirectoryLayoutTest(unittest.TestCase):
         }
         for directory in expected_post_training_dirs:
             self.assertTrue(directory.is_dir(), f"missing dataset category: {directory}")
+
+        self.assertTrue(Path("datasets/pretraining/curated/jsonl").is_dir())
+        self.assertTrue(Path("datasets/pretraining/curated/manifests").is_dir())
 
         uncategorized = [
             path.as_posix()

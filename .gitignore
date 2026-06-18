@@ -8,4 +8,5 @@ artifacts/checkpoints/
 artifacts/exports/
 artifacts/tokenizers/
 artifacts/reports/
+artifacts/generated_datasets/
 
