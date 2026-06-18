@@ -55,6 +55,16 @@ class LightningT4LauncherTest(unittest.TestCase):
         self.assertIn("CHECKPOINTS", script)
         self.assertIn("--watch", script)
 
+    def test_rtx_pro_6000_launcher_selects_dedicated_quality_fast_profile(self):
+        script = Path("scripts/lightning/start_rtxp6000_100m.sh").read_text(encoding="utf-8")
+        background = Path("scripts/lightning/start_rtxp6000_100m_background.sh").read_text(encoding="utf-8")
+
+        self.assertIn("lightning-rtx-pro-6000-100m-quality-fast.yaml", script)
+        self.assertIn("start_t4_100m.sh", script)
+        self.assertIn("nohup bash scripts/lightning/start_rtxp6000_100m.sh", background)
+        self.assertIn("lightning-rtxp6000-100m.pid", background)
+        self.assertIn("lightning-rtxp6000-100m-nohup.log", background)
+
 
 if __name__ == "__main__":
     unittest.main()

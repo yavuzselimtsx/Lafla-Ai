@@ -83,6 +83,38 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertEqual(fast_geometry.sequences_per_optimizer_step, 32)
         self.assertLess(fast_geometry.gradient_accumulation_steps, baseline_geometry.gradient_accumulation_steps)
 
+    def test_lightning_rtx_pro_6000_profile_keeps_token_budget_and_uses_larger_micro_batches(self):
+        t4 = TrainingConfig.from_mapping(
+            load_mapping("configs/training/lightning/lightning-t4-100m-quality-fast.yaml")
+        )
+        rtx = TrainingConfig.from_mapping(
+            load_mapping("configs/training/lightning/lightning-rtx-pro-6000-100m-quality-fast.yaml")
+        )
+
+        t4.validate()
+        rtx.validate()
+        t4_geometry = resolve_batch_geometry(
+            configured_micro_batch_size=t4.micro_batch_size,
+            configured_gradient_accumulation_steps=t4.gradient_accumulation_steps,
+            cuda_micro_batch_size_per_device=t4.cuda_micro_batch_size_per_device,
+            target_sequences_per_optimizer_step=t4.target_sequences_per_optimizer_step,
+            decision=ParallelismDecision(False, "single_device", 1, "test"),
+        )
+        rtx_geometry = resolve_batch_geometry(
+            configured_micro_batch_size=rtx.micro_batch_size,
+            configured_gradient_accumulation_steps=rtx.gradient_accumulation_steps,
+            cuda_micro_batch_size_per_device=rtx.cuda_micro_batch_size_per_device,
+            target_sequences_per_optimizer_step=rtx.target_sequences_per_optimizer_step,
+            decision=ParallelismDecision(False, "single_device", 1, "test"),
+        )
+
+        self.assertEqual(rtx.target_tokens, t4.target_tokens)
+        self.assertEqual(rtx.target_sequences_per_optimizer_step, t4.target_sequences_per_optimizer_step)
+        self.assertEqual(rtx_geometry.sequences_per_optimizer_step, 32)
+        self.assertGreater(rtx.cuda_micro_batch_size_per_device, t4.cuda_micro_batch_size_per_device)
+        self.assertLess(rtx_geometry.gradient_accumulation_steps, t4_geometry.gradient_accumulation_steps)
+        self.assertGreaterEqual(rtx.gradient_checkpointing_min_sequence_length, 8192)
+
     def test_training_config_rejects_invalid_distributed_policy(self):
         training = TrainingConfig.from_mapping(
             {
