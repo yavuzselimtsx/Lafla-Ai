@@ -27,6 +27,8 @@ class SyntheticChatSeedTest(unittest.TestCase):
         self.assertTrue(any("Bilmiyorum" in record.assistant for record in records))
         self.assertTrue(any("LaflaGPT Mini" in record.assistant for record in records))
         self.assertTrue(any("100 milyon" in record.assistant for record in records))
+        self.assertTrue(any(record.assistant.strip().startswith("Ankara") for record in records))
+        self.assertTrue(any("sadece bağlama göre cevapla" in record.user.casefold() for record in records))
         self.assertFalse(any("GPT-5.5 gibi düşünüyorum" in record.assistant for record in records))
         self.assertFalse(any(marker in json.dumps(record.__dict__, ensure_ascii=False) for record in records for marker in ("Ã", "Ä", "Å", "�")))
 

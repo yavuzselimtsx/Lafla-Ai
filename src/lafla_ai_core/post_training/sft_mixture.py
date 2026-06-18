@@ -288,6 +288,22 @@ def _category_for_record(source: str, record: ThinkingSftRecord) -> str:
         return "identity"
     if any(marker in surface for marker in ("2+2", "kaç eder", "yüzde", "toplama", "denklem", "matematik")):
         return "reasoning_math"
+    if any(
+        marker in surface
+        for marker in (
+            "sadece şehir",
+            "sadece rakam",
+            "tek kelime",
+            "json",
+            "sadece verilen bağlama",
+            "sadece bağlama",
+            "antworte nur",
+            "nur mit",
+            "format",
+            "istenen format",
+        )
+    ):
+        return "prompt_following"
     if any(marker in surface for marker in ("başkent", "başkenti", "ankara", "hauptstadt", "capital")):
         return "factual_anchor"
     if any(marker in surface for marker in ("bilmiyorum", "doğrulayam", "kaynak gerekir", "nicht sicher", "weiß ich")):
