@@ -4,6 +4,7 @@ set -Eeuo pipefail
 ROOT="${ROOT:-/teamspace/studios/this_studio}"
 REPO="${REPO:-$ROOT/LaflaAi-Core}"
 WORK="${WORK:-$ROOT/LaflaAI100M}"
+PROFILE_NAME="${PROFILE_NAME:-t4}"
 VENV="${VENV:-$ROOT/.venvs/lafla-100m-t4}"
 DATA_JSONL="${DATA_JSONL:-$WORK/data/train.jsonl}"
 MANIFEST="${MANIFEST:-$WORK/data/veri_manifesti.json}"
@@ -13,7 +14,15 @@ TOKENIZER="$WORK/tokenizer/lafla-tokenizer.json"
 CHECKPOINTS="$WORK/checkpoints"
 HF_PACKAGE="$WORK/hf-package"
 ARCHIVES="$WORK/archives"
-LOG="$REPORTS/lightning-t4-100m.log"
+LOG="${LOG:-$REPORTS/lightning-t4-100m.log}"
+DEVICE_LABEL="${DEVICE_LABEL:-T4}"
+DATASET_VERSION="${DATASET_VERSION:-lafla-100m-lightning-t4-realdata-2026-06}"
+ARCHIVE_NAME="${ARCHIVE_NAME:-lafla-100m-thinking-lightning-t4-run.tar.gz}"
+PYTORCH_INDEX_URL="${PYTORCH_INDEX_URL:-https://download.pytorch.org/whl/cu121}"
+PYTORCH_VERSION="${PYTORCH_VERSION:-}"
+EXPECTED_GPU_NAME="${EXPECTED_GPU_NAME:-}"
+REQUIRE_BF16="${REQUIRE_BF16:-0}"
+CUDA_BATCH_SCALE="${CUDA_BATCH_SCALE:-1.0}"
 
 TARGET_CHARS="${TARGET_CHARS:-200000000}"
 MIN_CHARS="${MIN_CHARS:-150000000}"
@@ -29,6 +38,8 @@ echo "[lafla] data=$DATA_JSONL"
 echo "[lafla] manifest=$MANIFEST"
 echo "[lafla] training_config=$TRAINING_CONFIG"
 echo "[lafla] venv=$VENV"
+echo "[lafla] profile=$PROFILE_NAME"
+echo "[lafla] cuda_batch_scale=$CUDA_BATCH_SCALE"
 
 test -d "$REPO" || { echo "Repo bulunamadi: $REPO" >&2; exit 2; }
 cd "$REPO"
@@ -80,12 +91,21 @@ create_virtualenv
 source "$VENV/bin/activate"
 
 python -m pip install --upgrade pip wheel setuptools
-if ! python - <<'PY'
+if ! PYTORCH_VERSION="$PYTORCH_VERSION" python - <<'PY'
+import os
 import torch
+expected = os.environ["PYTORCH_VERSION"]
+installed = torch.__version__.split("+", 1)[0]
 print("torch_exists=", torch.__version__, torch.cuda.is_available(), torch.cuda.device_count())
+if expected and installed != expected:
+    raise SystemExit(f"torch version mismatch: expected={expected}, installed={installed}")
 PY
 then
-  python -m pip install --index-url https://download.pytorch.org/whl/cu121 torch
+  TORCH_REQUIREMENT="torch"
+  if [ -n "$PYTORCH_VERSION" ]; then
+    TORCH_REQUIREMENT="torch==$PYTORCH_VERSION"
+  fi
+  python -m pip install --index-url "$PYTORCH_INDEX_URL" "$TORCH_REQUIREMENT"
 fi
 python -m pip install -r requirements/kaggle-gpu.txt
 
@@ -98,15 +118,24 @@ print(torch.cuda.device_count() if torch.cuda.is_available() else 0)
 PY
 )"
 echo "[lafla] CUDA_DEVICE_COUNT=$CUDA_DEVICE_COUNT"
-test "$CUDA_DEVICE_COUNT" -ge 1 || { echo "Lightning T4 launcher en az bir CUDA cihazi gerektirir" >&2; exit 2; }
+test "$CUDA_DEVICE_COUNT" -ge 1 || { echo "Lightning $DEVICE_LABEL launcher en az bir CUDA cihazi gerektirir" >&2; exit 2; }
 
-python - <<'PY'
+EXPECTED_GPU_NAME="$EXPECTED_GPU_NAME" REQUIRE_BF16="$REQUIRE_BF16" python - <<'PY'
+import os
 import torch
 
 print("cuda_available=", torch.cuda.is_available())
 print("cuda_device_count=", torch.cuda.device_count())
+names = []
 for index in range(torch.cuda.device_count()):
-    print(f"cuda:{index}=", torch.cuda.get_device_name(index))
+    name = torch.cuda.get_device_name(index)
+    names.append(name)
+    print(f"cuda:{index}=", name)
+expected_name = os.environ["EXPECTED_GPU_NAME"]
+if expected_name and not all(expected_name in name for name in names):
+    raise SystemExit(f"beklenen GPU bulunamadi: {expected_name}; bulunan={names}")
+if os.environ["REQUIRE_BF16"] == "1" and not torch.cuda.is_bf16_supported():
+    raise SystemExit("secilen profil BF16 destekli CUDA cihazi gerektirir")
 PY
 
 python -m lafla_ai_core.cli.check_environment --optimizer adamw --accelerator cuda
@@ -125,7 +154,7 @@ if [ ! -s "$DATA_JSONL" ] || [ ! -s "$MANIFEST" ]; then
     --manifest "$MANIFEST" \
     --report "$REPORTS/data-prepare-report.json" \
     --identity-jsonl configs/data/identity/lafla-model-identity-100m.jsonl \
-    --dataset-version lafla-100m-lightning-t4-realdata-2026-06 \
+    --dataset-version "$DATASET_VERSION" \
     --target-chars "$TARGET_CHARS" \
     --min-chars "$MIN_CHARS" \
     --max-record-chars "$MAX_RECORD_CHARS"
@@ -189,6 +218,7 @@ TRAIN_ARGS=(
   --health-log "$REPORTS/train-health.jsonl"
   --data-jsonl configs/data/identity/lafla-model-identity-100m.jsonl
   --data-jsonl "$DATA_JSONL"
+  --cuda-batch-scale "$CUDA_BATCH_SCALE"
 )
 if [ -n "$ACTIVE_RESUME" ]; then
   test -d "$ACTIVE_RESUME" || { echo "RESUME_FROM checkpoint bulunamadi: $ACTIVE_RESUME" >&2; exit 2; }
@@ -200,7 +230,7 @@ python "${TRAIN_ARGS[@]}"
 python -m lafla_ai_core.cli.artifact_manifest \
   --root "$WORK" \
   --output "$REPORTS/artifact-manifest.json"
-tar -czf "$ARCHIVES/lafla-100m-thinking-lightning-t4-run.tar.gz" \
+tar -czf "$ARCHIVES/$ARCHIVE_NAME" \
   -C "$CHECKPOINTS" lafla-final \
   -C "$WORK" tokenizer reports hf-package
 sync

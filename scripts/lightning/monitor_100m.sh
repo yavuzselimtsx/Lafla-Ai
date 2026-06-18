@@ -7,7 +7,7 @@ REPORTS="$WORK/reports"
 CHECKPOINTS="$WORK/checkpoints"
 CHECKPOINT_BACKUPS="$WORK/checkpoint-backups"
 HEALTH_LOG="$REPORTS/train-health.jsonl"
-NOHUP_LOG="$REPORTS/lightning-t4-100m-nohup.log"
+NOHUP_LOG="${NOHUP_LOG:-$REPORTS/lightning-t4-100m-nohup.log}"
 
 INTERVAL=0
 if [ "${1:-}" = "--watch" ]; then
