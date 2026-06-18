@@ -473,6 +473,13 @@ class CheckpointQualityContractTest(unittest.TestCase):
 
         self.assertIn("low_information_generation", release_phase.required_gates)
 
+    def test_strict_unknown_private_data_case_requires_refusal_evidence(self):
+        cases = load_mapping("configs/evaluation/lafla-mini-strict-smoke.yaml")["evaluation"]["cases"]
+        unknown = next(case for case in cases if case["id"] == "unknown_private_data")
+
+        self.assertTrue(unknown["allow_refusal"])
+        self.assertTrue(unknown["expect_regex"])
+
 
 if __name__ == "__main__":
     unittest.main()
