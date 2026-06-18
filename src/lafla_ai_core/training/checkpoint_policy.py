@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -56,25 +57,28 @@ def retention_victims(existing_steps: list[int], keep_last: int) -> tuple[int, .
     return tuple(ordered[: len(ordered) - keep_last])
 
 
-def archive_checkpoint_before_retention(target: Path, checkpoint_root: Path) -> Path:
-    """Retention silmeden once READY checkpoint'i kardes backup klasorune kopyalar."""
+def archive_checkpoint_snapshot(
+    target: Path,
+    checkpoint_root: Path,
+    *,
+    reason: str = "checkpoint_backup",
+) -> Path:
+    """READY checkpoint'i kardes backup klasorune, ezmeden kopyalar."""
 
     archive_root = checkpoint_root.parent / "checkpoint-backups"
-    archive_target = archive_root / target.name
     archive_root.mkdir(parents=True, exist_ok=True)
     resolved_archive_root = archive_root.resolve()
+    archive_target = _next_archive_target(archive_root / target.name)
     resolved_archive_target = archive_target.resolve()
     if resolved_archive_root not in resolved_archive_target.parents:
         raise RuntimeError(f"checkpoint archive hedefi guvenli degil: {resolved_archive_target}")
-    if archive_target.exists():
-        return archive_target
     shutil.copytree(target, archive_target)
-    (archive_target / "ARCHIVED_BY_RETENTION.json").write_text(
+    (archive_target / "CHECKPOINT_BACKUP.json").write_text(
         json.dumps(
             {
                 "source": str(target),
                 "archive": str(archive_target),
-                "reason": "checkpoint_retention_backup_before_delete",
+                "reason": reason,
             },
             ensure_ascii=False,
             indent=2,
@@ -84,6 +88,16 @@ def archive_checkpoint_before_retention(target: Path, checkpoint_root: Path) -> 
         encoding="utf-8",
     )
     return archive_target
+
+
+def archive_checkpoint_before_retention(target: Path, checkpoint_root: Path) -> Path:
+    """Retention silmeden once READY checkpoint'i kardes backup klasorune kopyalar."""
+
+    return archive_checkpoint_snapshot(
+        target,
+        checkpoint_root,
+        reason="checkpoint_retention_backup_before_delete",
+    )
 
 
 def apply_checkpoint_retention(checkpoint_root: Path, keep_last: int) -> None:
@@ -104,4 +118,16 @@ def apply_checkpoint_retention(checkpoint_root: Path, keep_last: int) -> None:
             raise RuntimeError(f"retention hedefi checkpoint disinda: {resolved_target}")
         archive_checkpoint_before_retention(target, checkpoint_root)
         shutil.rmtree(resolved_target)
+
+
+def _next_archive_target(base: Path) -> Path:
+    if not base.exists():
+        return base
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    for index in range(1000):
+        suffix = f"backup-{stamp}" if index == 0 else f"backup-{stamp}-{index:03d}"
+        candidate = base.with_name(f"{base.name}-{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"checkpoint archive hedefi uretilemedi: {base}")
 

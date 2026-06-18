@@ -69,6 +69,7 @@ class TrainingRunnerSmokeTest(unittest.TestCase):
             )
             self.assertEqual(summary.final_step, 2)
             self.assertTrue((root / "checkpoints" / "lafla-final" / "READY.json").exists())
+            self.assertTrue((root / "checkpoint-backups" / "lafla-final" / "READY.json").exists())
             self.assertTrue((root / "reports" / "health.jsonl").exists())
 
 

@@ -34,6 +34,7 @@ from lafla_ai_core.model.checkpoint_io import load_training_checkpoint, save_tra
 from lafla_ai_core.model.transformer import LaflaDecoderModel
 from lafla_ai_core.training.checkpoint_policy import (
     CheckpointPolicy,
+    archive_checkpoint_snapshot,
     apply_checkpoint_retention,
     should_save_checkpoint,
 )
@@ -477,13 +478,15 @@ def _run_pretraining_impl(
             last_completed_step = step
     except KeyboardInterrupt:
         if runtime.is_primary and last_completed_step > start_step:
+            interrupted_dir = checkpoint_root / f"lafla-interrupted-step-{last_completed_step:06d}"
             save_training_checkpoint(
-                checkpoint_root / f"lafla-interrupted-step-{last_completed_step:06d}",
+                interrupted_dir,
                 base_model,
                 optimizer,
                 model_config,
                 _trainer_state(last_completed_step, training_config, smoke, cumulative_tokens, active_stage),
             )
+            archive_checkpoint_snapshot(interrupted_dir, checkpoint_root, reason="checkpoint_interrupted_save")
         raise
 
     final_dir = checkpoint_root / "lafla-final"
@@ -720,6 +723,7 @@ def _save_distributed_checkpoint(
     runtime.barrier()
     if runtime.is_primary:
         save_training_checkpoint(target_dir, model, optimizer, model_config, state)
+        archive_checkpoint_snapshot(target_dir, target_dir.parent, reason="checkpoint_saved")
     runtime.barrier()
 
 
