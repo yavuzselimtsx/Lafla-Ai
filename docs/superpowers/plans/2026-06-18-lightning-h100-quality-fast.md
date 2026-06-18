@@ -15,6 +15,7 @@
 **Files:**
 - Modify: `src/lafla_ai_core/config/schema.py`
 - Modify: `src/lafla_ai_core/training/parallelism.py`
+- Modify: `src/lafla_ai_core/cli/train_pretrain.py`
 - Modify: `tests/unit/test_config_preflight.py`
 - Modify: `tests/unit/test_training_parallelism.py`
 
@@ -43,7 +44,7 @@ Expected: failure because the new field/function does not exist.
 
 - [ ] **Step 3: Implement schema and resolver**
 
-Add `cuda_micro_batch_size_per_device_curriculum: tuple[int, ...] = ()`, parse it with `_int_tuple`, and validate positivity, stage count, and CUDA tuning requirements. Add:
+Add `cuda_micro_batch_size_per_device_curriculum: tuple[int, ...] = ()` and `cuda_batch_scale: float = 1.0`, parse them, and validate positivity, stage count, CUDA tuning requirements, and `0 < cuda_batch_scale <= 1`. Add:
 
 ```python
 def resolve_stage_batch_geometry(*, stage_index: int, cuda_micro_batch_size_per_device_curriculum: tuple[int, ...], **kwargs) -> BatchGeometry:
@@ -52,8 +53,10 @@ def resolve_stage_batch_geometry(*, stage_index: int, cuda_micro_batch_size_per_
         if not 0 <= stage_index < len(cuda_micro_batch_size_per_device_curriculum):
             raise ValueError("curriculum stage batch programi disinda")
         selected = cuda_micro_batch_size_per_device_curriculum[stage_index]
-    return resolve_batch_geometry(cuda_micro_batch_size_per_device=selected, **kwargs)
+return resolve_batch_geometry(cuda_micro_batch_size_per_device=selected, **kwargs)
 ```
+
+Add a pure `scale_cuda_micro_batch_program` helper that accepts only `1.0`, `0.5`, or `0.25`, scales both static and curriculum values to positive divisors of the target optimizer batch, and returns a replaced `TrainingConfig`. Expose it through `train_pretrain --cuda-batch-scale`; validate the base config, apply the scale, then validate the resolved config again.
 
 - [ ] **Step 4: Run tests and confirm GREEN**
 
@@ -62,7 +65,7 @@ Run: `python -m unittest tests.unit.test_config_preflight tests.unit.test_traini
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lafla_ai_core/config/schema.py src/lafla_ai_core/training/parallelism.py tests/unit/test_config_preflight.py tests/unit/test_training_parallelism.py
+git add src/lafla_ai_core/config/schema.py src/lafla_ai_core/training/parallelism.py src/lafla_ai_core/cli/train_pretrain.py tests/unit/test_config_preflight.py tests/unit/test_training_parallelism.py
 git commit -m "Add curriculum-aware CUDA batch geometry"
 ```
 
@@ -75,7 +78,7 @@ git commit -m "Add curriculum-aware CUDA batch geometry"
 
 - [ ] **Step 1: Write failing transition tests**
 
-Add a helper-level test proving stage 0 resolves `32/1` and stage 1 resolves `16/2`. Add a smoke runner assertion that the health record includes the stage-selected micro-batch and constant `sequences_per_optimizer_step: 32`.
+Add a helper-level test proving stage 0 resolves `32/1` and stage 1 resolves `16/2`. Add a smoke runner assertion that the health record includes the stage-selected micro-batch, `cuda_batch_scale`, and constant `sequences_per_optimizer_step: 32`.
 
 - [ ] **Step 2: Run tests and confirm RED**
 
@@ -159,7 +162,7 @@ git commit -m "Add H100 quality-fast training profile"
 
 - [ ] **Step 1: Write failing launcher text-contract tests**
 
-Require the H100 wrapper to select the H100 config, `torch==2.11.0` from `cu128`, an H100-specific venv/log, BF16/H100 runtime checks, background PID protection, and monitor log override.
+Require the H100 wrapper to select the H100 config, `torch==2.11.0` from `cu128`, an H100-specific venv/log, BF16/H100 runtime checks, background PID protection, monitor log override, and ordered `1.0 0.5 0.25` OOM retries.
 
 - [ ] **Step 2: Run test and confirm RED**
 
@@ -171,7 +174,7 @@ Expose environment defaults for `PROFILE_NAME`, `VENV`, `LOG`, `DATASET_VERSION`
 
 - [ ] **Step 4: Add H100 wrappers**
 
-`start_h100_100m.sh` sets H100 defaults then executes the shared launcher. The background wrapper uses `nohup`, refuses a second `train_pretrain` process, and records PID/log paths. The monitor wrapper exports the H100 nohup log before executing the common monitor.
+`start_h100_100m.sh` sets H100 defaults and calls the shared launcher with `--cuda-batch-scale` for scales `1.0`, `0.5`, and `0.25`. It advances only when the failed log contains `torch.OutOfMemoryError` or `CUDA out of memory`; every other non-zero exit fails immediately. Each retry relies on the shared launcher's latest-`READY.json` auto-resume. The background wrapper uses `nohup`, refuses a second `train_pretrain` process, and records PID/log paths. The monitor wrapper exports the H100 nohup log before executing the common monitor.
 
 - [ ] **Step 5: Run tests and confirm GREEN**
 
