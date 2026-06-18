@@ -14,9 +14,9 @@ import json
 import math
 import random
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from lafla_ai_core.post_training.thinking_dataset import iter_thinking_jsonl_records
 from lafla_ai_core.post_training.thinking_sft import ThinkingSftRecord
@@ -24,6 +24,11 @@ from lafla_ai_core.post_training.thinking_sft import ThinkingSftRecord
 
 _VARIANT_RE = re.compile(r"\b(varyant|variant|variante)\s*\d+\b", flags=re.IGNORECASE)
 _NUMBER_RE = re.compile(r"\d+")
+_MOJIBAKE_MARKERS = (chr(0x00C3), chr(0x00C4), chr(0x00C5), chr(0x00EF) + chr(0x00BF) + chr(0x00BD), "\ufffd")
+DEFAULT_MAX_SAFETY_RATIO = 0.10
+DEFAULT_MAX_IDENTITY_RATIO = 0.18
+DEFAULT_MAX_UNCERTAINTY_RATIO = 0.25
+DEFAULT_MAX_DOMINANT_CATEGORY_RATIO = 0.45
 
 
 @dataclass(frozen=True)
@@ -37,10 +42,18 @@ class SftMixtureSummary:
     total_selected: int
     target_safety_ratio: float
     actual_safety_ratio: float
+    max_safety_ratio: float
+    max_identity_ratio: float
+    max_uncertainty_ratio: float
+    max_dominant_category_ratio: float
     safety_template_count: int
     max_safety_per_template: int
     output_jsonl: str
     report_json: str | None = None
+    thinking_dropped_by_category: dict[str, int] = field(default_factory=dict)
+    quality_ok: bool = True
+    quality_findings: tuple[str, ...] = ()
+    category_counts: dict[str, int] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2, sort_keys=True)
@@ -54,6 +67,10 @@ def build_thinking_sft_mixture(
     report_json: str | Path | None = None,
     target_safety_ratio: float = 0.08,
     max_safety_per_template: int = 12,
+    max_safety_ratio: float = DEFAULT_MAX_SAFETY_RATIO,
+    max_identity_ratio: float = DEFAULT_MAX_IDENTITY_RATIO,
+    max_uncertainty_ratio: float = DEFAULT_MAX_UNCERTAINTY_RATIO,
+    max_dominant_category_ratio: float = DEFAULT_MAX_DOMINANT_CATEGORY_RATIO,
     seed: int = 1337,
 ) -> SftMixtureSummary:
     """Sohbet agirlikli, safety kontrollu SFT JSONL dosyasi yazar."""
@@ -62,10 +79,26 @@ def build_thinking_sft_mixture(
         raise ValueError("target_safety_ratio 0 ile 0.5 arasinda olmali")
     if max_safety_per_template < 1:
         raise ValueError("max_safety_per_template pozitif olmali")
-    thinking_records = [record for _line, record in iter_thinking_jsonl_records(thinking_jsonl)]
+    for name, ratio in (
+        ("max_safety_ratio", max_safety_ratio),
+        ("max_identity_ratio", max_identity_ratio),
+        ("max_uncertainty_ratio", max_uncertainty_ratio),
+        ("max_dominant_category_ratio", max_dominant_category_ratio),
+    ):
+        if not 0.0 < ratio < 1.0:
+            raise ValueError(f"{name} 0 ile 1 arasinda olmali")
+    thinking_input_records = [record for _line, record in iter_thinking_jsonl_records(thinking_jsonl)]
     safety_records = [record for _line, record in iter_thinking_jsonl_records(safety_jsonl)]
-    if not thinking_records:
+    if not thinking_input_records:
         raise ValueError("thinking SFT kaynagi bos olamaz")
+    thinking_records, thinking_dropped_by_category = _select_balanced_thinking_records(
+        thinking_input_records,
+        category_final_caps={
+            "identity": max_identity_ratio,
+            "uncertainty": max_uncertainty_ratio,
+        },
+        seed=seed,
+    )
     target_safety_count = _target_safety_count(len(thinking_records), target_safety_ratio)
     selected_safety = _select_diverse_safety_records(
         safety_records,
@@ -76,12 +109,20 @@ def build_thinking_sft_mixture(
     rows: list[tuple[str, ThinkingSftRecord]] = [("thinking", record) for record in thinking_records]
     rows.extend(("safety", record) for record in selected_safety)
     random.Random(seed).shuffle(rows)
+    quality_ok, quality_findings, category_counts = _assess_mixture_quality(
+        rows,
+        max_safety_ratio=max_safety_ratio,
+        max_identity_ratio=max_identity_ratio,
+        max_uncertainty_ratio=max_uncertainty_ratio,
+        max_dominant_category_ratio=max_dominant_category_ratio,
+    )
 
     output = Path(output_jsonl)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8") as handle:
         for source, record in rows:
             payload = {
+                "_sft_category": _category_for_record(source, record),
                 "_sft_source": source,
                 "system": record.system,
                 "user": record.user,
@@ -93,17 +134,25 @@ def build_thinking_sft_mixture(
     safety_templates = {_template_key(record) for record in safety_records}
     actual_ratio = len(selected_safety) / len(rows) if rows else 0.0
     summary = SftMixtureSummary(
-        thinking_input=len(thinking_records),
+        thinking_input=len(thinking_input_records),
         safety_input=len(safety_records),
         thinking_selected=len(thinking_records),
         safety_selected=len(selected_safety),
         total_selected=len(rows),
         target_safety_ratio=target_safety_ratio,
         actual_safety_ratio=actual_ratio,
+        max_safety_ratio=max_safety_ratio,
+        max_identity_ratio=max_identity_ratio,
+        max_uncertainty_ratio=max_uncertainty_ratio,
+        max_dominant_category_ratio=max_dominant_category_ratio,
         safety_template_count=len(safety_templates),
         max_safety_per_template=max_safety_per_template,
         output_jsonl=str(output),
         report_json=None if report_json is None else str(report_json),
+        thinking_dropped_by_category=thinking_dropped_by_category,
+        quality_ok=quality_ok,
+        quality_findings=quality_findings,
+        category_counts=category_counts,
     )
     if report_json is not None:
         report = Path(report_json)
@@ -148,6 +197,37 @@ def _select_diverse_safety_records(
     return tuple(selected)
 
 
+def _select_balanced_thinking_records(
+    records: Sequence[ThinkingSftRecord],
+    *,
+    category_final_caps: Mapping[str, float],
+    seed: int,
+) -> tuple[tuple[ThinkingSftRecord, ...], dict[str, int]]:
+    if not records:
+        return (), {}
+    rng = random.Random(seed)
+    total_input = len(records)
+    buckets: dict[str, list[ThinkingSftRecord]] = {}
+    for record in records:
+        buckets.setdefault(_category_for_record("thinking", record), []).append(record)
+    selected: list[ThinkingSftRecord] = []
+    dropped: dict[str, int] = {}
+    for category in sorted(buckets):
+        bucket = list(buckets[category])
+        rng.shuffle(bucket)
+        cap_ratio = category_final_caps.get(category)
+        if cap_ratio is None:
+            selected.extend(bucket)
+            continue
+        other_count = total_input - len(bucket)
+        cap = max(1, int((cap_ratio / (1.0 - cap_ratio)) * other_count))
+        selected.extend(bucket[:cap])
+        if len(bucket) > cap:
+            dropped[category] = len(bucket) - cap
+    rng.shuffle(selected)
+    return tuple(selected), dropped
+
+
 def _target_safety_count(thinking_count: int, ratio: float) -> int:
     if ratio <= 0.0:
         return 0
@@ -159,3 +239,64 @@ def _template_key(record: ThinkingSftRecord) -> str:
     surface = _VARIANT_RE.sub("variant #", surface)
     surface = _NUMBER_RE.sub("#", surface)
     return " ".join(surface.split())
+
+
+def _assess_mixture_quality(
+    rows: Sequence[tuple[str, ThinkingSftRecord]],
+    *,
+    max_safety_ratio: float,
+    max_identity_ratio: float,
+    max_uncertainty_ratio: float,
+    max_dominant_category_ratio: float,
+) -> tuple[bool, tuple[str, ...], dict[str, int]]:
+    counts: dict[str, int] = {}
+    mojibake_count = 0
+    for source, record in rows:
+        category = _category_for_record(source, record)
+        counts[category] = counts.get(category, 0) + 1
+        if _contains_mojibake(record):
+            mojibake_count += 1
+    total = len(rows)
+    findings: list[str] = []
+    if total == 0:
+        return False, ("empty_mixture",), counts
+    dominant_category, dominant_count = max(counts.items(), key=lambda item: item[1])
+    dominant_ratio = dominant_count / total
+    safety_ratio = counts.get("safety", 0) / total
+    identity_ratio = counts.get("identity", 0) / total
+    uncertainty_ratio = counts.get("uncertainty", 0) / total
+    if dominant_ratio > max_dominant_category_ratio:
+        findings.append(f"dominant_category_ratio:{dominant_category}:{dominant_ratio:.3f}")
+    if safety_ratio > max_safety_ratio:
+        findings.append(f"safety_ratio:{safety_ratio:.3f}")
+    if identity_ratio > max_identity_ratio:
+        findings.append(f"identity_ratio:{identity_ratio:.3f}")
+    if uncertainty_ratio > max_uncertainty_ratio:
+        findings.append(f"uncertainty_ratio:{uncertainty_ratio:.3f}")
+    if total >= 20 and len(counts) < 3:
+        findings.append(f"low_category_diversity:{len(counts)}")
+    if mojibake_count:
+        findings.append(f"mojibake_like_text:{mojibake_count}")
+    return not findings, tuple(findings), counts
+
+
+def _category_for_record(source: str, record: ThinkingSftRecord) -> str:
+    if source == "safety":
+        return "safety"
+    surface = f"{record.system}\n{record.user}\n{record.thinking}\n{record.assistant}".casefold()
+    if any(marker in surface for marker in ("laflagpt", "gpt-5.5", "yavuz selim", "parametre", "parameter")):
+        return "identity"
+    if any(marker in surface for marker in ("2+2", "kaç eder", "yüzde", "toplama", "denklem", "matematik")):
+        return "reasoning_math"
+    if any(marker in surface for marker in ("başkent", "başkenti", "ankara", "hauptstadt", "capital")):
+        return "factual_anchor"
+    if any(marker in surface for marker in ("bilmiyorum", "doğrulayam", "kaynak gerekir", "nicht sicher", "weiß ich")):
+        return "uncertainty"
+    if any(marker in surface for marker in ("instagram", "discord", "bot", "context", "bağlam")):
+        return "bot_context"
+    return "general_chat"
+
+
+def _contains_mojibake(record: ThinkingSftRecord) -> bool:
+    surface = f"{record.system}\n{record.user}\n{record.thinking}\n{record.assistant}"
+    return any(marker in surface for marker in _MOJIBAKE_MARKERS)

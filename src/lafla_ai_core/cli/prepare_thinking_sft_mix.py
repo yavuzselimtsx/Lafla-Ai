@@ -20,6 +20,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--report-json")
     parser.add_argument("--target-safety-ratio", type=float, default=0.08)
     parser.add_argument("--max-safety-per-template", type=int, default=12)
+    parser.add_argument("--max-safety-ratio", type=float, default=0.10)
+    parser.add_argument("--max-identity-ratio", type=float, default=0.18)
+    parser.add_argument("--max-uncertainty-ratio", type=float, default=0.25)
+    parser.add_argument("--max-dominant-category-ratio", type=float, default=0.45)
     parser.add_argument("--seed", type=int, default=1337)
     args = parser.parse_args(argv)
     summary = build_thinking_sft_mixture(
@@ -29,6 +33,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         report_json=args.report_json,
         target_safety_ratio=args.target_safety_ratio,
         max_safety_per_template=args.max_safety_per_template,
+        max_safety_ratio=args.max_safety_ratio,
+        max_identity_ratio=args.max_identity_ratio,
+        max_uncertainty_ratio=args.max_uncertainty_ratio,
+        max_dominant_category_ratio=args.max_dominant_category_ratio,
         seed=args.seed,
     )
     print(summary.to_json())

@@ -5,6 +5,7 @@ from pathlib import Path
 from lafla_ai_core.cli.preflight import run_preflight
 from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import ModelConfig, PostTrainingConfig, RuntimeConfig, TokenizerConfig, TrainingConfig
+from lafla_ai_core.training.parallelism import ParallelismDecision, resolve_batch_geometry
 
 
 class ConfigPreflightTest(unittest.TestCase):
@@ -48,6 +49,39 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertTrue(training.pin_memory)
         self.assertTrue(training.prefer_fused_optimizer)
         self.assertTrue(training.prefer_native_gqa)
+
+    def test_lightning_t4_quality_fast_profile_keeps_token_budget_but_reduces_accumulation(self):
+        baseline = TrainingConfig.from_mapping(
+            load_mapping("configs/training/kaggle/kaggle-gpu-100m.yaml")
+        )
+        fast = TrainingConfig.from_mapping(
+            load_mapping("configs/training/lightning/lightning-t4-100m-quality-fast.yaml")
+        )
+
+        baseline.validate()
+        fast.validate()
+        baseline_geometry = resolve_batch_geometry(
+            configured_micro_batch_size=baseline.micro_batch_size,
+            configured_gradient_accumulation_steps=baseline.gradient_accumulation_steps,
+            cuda_micro_batch_size_per_device=baseline.cuda_micro_batch_size_per_device,
+            target_sequences_per_optimizer_step=baseline.target_sequences_per_optimizer_step,
+            decision=ParallelismDecision(False, "single_device", 1, "test"),
+        )
+        fast_geometry = resolve_batch_geometry(
+            configured_micro_batch_size=fast.micro_batch_size,
+            configured_gradient_accumulation_steps=fast.gradient_accumulation_steps,
+            cuda_micro_batch_size_per_device=fast.cuda_micro_batch_size_per_device,
+            target_sequences_per_optimizer_step=fast.target_sequences_per_optimizer_step,
+            decision=ParallelismDecision(False, "single_device", 1, "test"),
+        )
+
+        self.assertEqual(fast.target_tokens, baseline.target_tokens)
+        self.assertEqual(fast.sequence_length, baseline.sequence_length)
+        self.assertEqual(fast.target_sequences_per_optimizer_step, baseline.target_sequences_per_optimizer_step)
+        self.assertGreater(fast.cuda_micro_batch_size_per_device, baseline.cuda_micro_batch_size_per_device)
+        self.assertEqual(baseline_geometry.sequences_per_optimizer_step, 32)
+        self.assertEqual(fast_geometry.sequences_per_optimizer_step, 32)
+        self.assertLess(fast_geometry.gradient_accumulation_steps, baseline_geometry.gradient_accumulation_steps)
 
     def test_training_config_rejects_invalid_distributed_policy(self):
         training = TrainingConfig.from_mapping(

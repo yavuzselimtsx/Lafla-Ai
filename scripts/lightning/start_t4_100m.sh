@@ -7,6 +7,7 @@ WORK="${WORK:-$ROOT/LaflaAI100M}"
 VENV="${VENV:-$ROOT/.venvs/lafla-100m-t4}"
 DATA_JSONL="${DATA_JSONL:-$WORK/data/train.jsonl}"
 MANIFEST="${MANIFEST:-$WORK/data/veri_manifesti.json}"
+TRAINING_CONFIG="${TRAINING_CONFIG:-${LAFLA_TRAINING_CONFIG:-configs/training/lightning/lightning-t4-100m-quality-fast.yaml}}"
 REPORTS="$WORK/reports"
 TOKENIZER="$WORK/tokenizer/lafla-tokenizer.json"
 CHECKPOINTS="$WORK/checkpoints"
@@ -26,6 +27,7 @@ echo "[lafla] repo=$REPO"
 echo "[lafla] work=$WORK"
 echo "[lafla] data=$DATA_JSONL"
 echo "[lafla] manifest=$MANIFEST"
+echo "[lafla] training_config=$TRAINING_CONFIG"
 echo "[lafla] venv=$VENV"
 
 test -d "$REPO" || { echo "Repo bulunamadi: $REPO" >&2; exit 2; }
@@ -111,7 +113,7 @@ python -m lafla_ai_core.cli.check_environment --optimizer adamw --accelerator cu
 python -m lafla_ai_core.cli.quality_scan --root .
 python -m lafla_ai_core.cli.preflight \
   configs/model/lafla-100m-thinking.yaml \
-  configs/training/kaggle/kaggle-gpu-100m.yaml \
+  "$TRAINING_CONFIG" \
   configs/tokenizer/turkish-german-thinking-bpe.yaml \
   configs/runtime/desktop-i3-int8-100m.yaml \
   configs/post_training/lafla-thinking-sft.yaml
@@ -181,7 +183,7 @@ ACTIVE_RESUME="${RESUME_FROM:-$AUTO_RESUME}"
 TRAIN_ARGS=(
   -m lafla_ai_core.cli.train_pretrain
   --model-config configs/model/lafla-100m-thinking.yaml
-  --training-config configs/training/kaggle/kaggle-gpu-100m.yaml
+  --training-config "$TRAINING_CONFIG"
   --tokenizer-path "$TOKENIZER"
   --checkpoint-dir "$CHECKPOINTS"
   --health-log "$REPORTS/train-health.jsonl"
