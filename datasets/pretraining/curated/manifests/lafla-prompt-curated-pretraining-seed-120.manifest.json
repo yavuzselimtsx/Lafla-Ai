@@ -1,0 +1,39 @@
+{
+  "allowed_for_post_training": false,
+  "allowed_for_pretraining": true,
+  "candidate_pool_size": 34544,
+  "data_kind": "curated_document_pretraining_seed",
+  "dataset_version": "lafla-curated-pretraining-seed-2026-06-v1",
+  "domain_counts": {
+    "architecture_security": 48,
+    "engineering_quality": 42,
+    "foundation": 3,
+    "product_behavior": 27
+  },
+  "fields": [
+    "text",
+    "source",
+    "source_sections",
+    "category"
+  ],
+  "format": "jsonl",
+  "quality_metrics": {
+    "exact_duplicate_count": 0,
+    "max_source_block_reuse_count": 1,
+    "max_source_block_reuse_ratio": 0.008333,
+    "source_block_count": 121,
+    "source_block_coverage_ratio": 0.991736,
+    "unique_text_ratio": 1.0
+  },
+  "quality_policy": {
+    "composition": "extractive_source_blocks_only",
+    "exact_duplicate_count_max": 0,
+    "generated_factual_claims": false,
+    "recommended_usage": "low_weight_continued_pretraining_seed",
+    "record_style": "document_not_chat"
+  },
+  "records": 120,
+  "sha256": "9172c2b7d763d03c8c98bd5f54b7dede3ed535ac484c1a10d13588d7fd0dff88",
+  "source": "..\\..\\Prompt.md",
+  "source_sha256": "4e87785332c5a3052b8a44432bc24b8f2d35859907b2aebae2ea086af7b10a39"
+}
