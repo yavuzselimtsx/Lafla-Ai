@@ -1,0 +1,60 @@
+{
+  "allowed_for_post_training": true,
+  "allowed_for_pretraining": false,
+  "category_counts": {
+    "answerable_anchor": 230,
+    "bot_context": 30,
+    "bounded_uncertainty": 30,
+    "code_quality_help": 30,
+    "format_following": 60,
+    "identity_anchor": 15,
+    "language_control_de": 40,
+    "language_control_tr": 40,
+    "safety_resilience": 25
+  },
+  "category_weights_percent": {
+    "answerable_anchor": 46,
+    "bot_context": 6,
+    "bounded_uncertainty": 6,
+    "code_quality_help": 6,
+    "format_following": 12,
+    "identity_anchor": 3,
+    "language_control_de": 8,
+    "language_control_tr": 8,
+    "safety_resilience": 5
+  },
+  "data_kind": "quality_chat_sft_seed",
+  "dataset_version": "lafla-mini-quality-chat-seed-2026-06-v1",
+  "fields": [
+    "system",
+    "user",
+    "thinking",
+    "assistant"
+  ],
+  "format": "jsonl",
+  "language_counts": {
+    "de": 40,
+    "tr": 460
+  },
+  "profile_path": "configs\\post_training\\lafla-100m-seed-profile.json",
+  "quality_metrics": {
+    "answerable_refusal_count": 0,
+    "exact_duplicate_count": 0,
+    "language_leakage_count": 0,
+    "mojibake_record_count": 0,
+    "refusal_ratio": 0.11,
+    "unique_user_assistant_ratio": 1.0,
+    "visible_variant_marker_count": 0
+  },
+  "quality_policy": {
+    "answerable_examples_outnumber_unknown": true,
+    "answerable_refusal_count_max": 0,
+    "exact_duplicate_count_max": 0,
+    "minimum_unique_user_assistant_ratio": 0.98,
+    "safety_ratio_max": 0.1,
+    "thinking_kind": "short_verifiable_rationale",
+    "visible_variant_markers": false
+  },
+  "records": 500,
+  "sha256": "d6a73aeee283aff6b57516e5d6b3774cb102ee8300efcc87c2a1fc0aaa0e3e77"
+}
