@@ -27,8 +27,9 @@ _NUMBER_RE = re.compile(r"\d+")
 _MOJIBAKE_MARKERS = (chr(0x00C3), chr(0x00C4), chr(0x00C5), chr(0x00EF) + chr(0x00BF) + chr(0x00BD), "\ufffd")
 DEFAULT_MAX_SAFETY_RATIO = 0.10
 DEFAULT_MAX_IDENTITY_RATIO = 0.18
-DEFAULT_MAX_UNCERTAINTY_RATIO = 0.25
+DEFAULT_MAX_UNCERTAINTY_RATIO = 0.08
 DEFAULT_MAX_DOMINANT_CATEGORY_RATIO = 0.45
+DEFAULT_MAX_REFUSAL_RATIO = 0.16
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,11 @@ class SftMixtureSummary:
     max_identity_ratio: float
     max_uncertainty_ratio: float
     max_dominant_category_ratio: float
+    max_refusal_ratio: float
+    refusal_count: int
+    refusal_ratio: float
+    answerable_refusal_count: int
+    language_leakage_count: int
     safety_template_count: int
     max_safety_per_template: int
     output_jsonl: str
@@ -71,6 +77,7 @@ def build_thinking_sft_mixture(
     max_identity_ratio: float = DEFAULT_MAX_IDENTITY_RATIO,
     max_uncertainty_ratio: float = DEFAULT_MAX_UNCERTAINTY_RATIO,
     max_dominant_category_ratio: float = DEFAULT_MAX_DOMINANT_CATEGORY_RATIO,
+    max_refusal_ratio: float = DEFAULT_MAX_REFUSAL_RATIO,
     seed: int = 1337,
 ) -> SftMixtureSummary:
     """Sohbet agirlikli, safety kontrollu SFT JSONL dosyasi yazar."""
@@ -84,6 +91,7 @@ def build_thinking_sft_mixture(
         ("max_identity_ratio", max_identity_ratio),
         ("max_uncertainty_ratio", max_uncertainty_ratio),
         ("max_dominant_category_ratio", max_dominant_category_ratio),
+        ("max_refusal_ratio", max_refusal_ratio),
     ):
         if not 0.0 < ratio < 1.0:
             raise ValueError(f"{name} 0 ile 1 arasinda olmali")
@@ -115,7 +123,14 @@ def build_thinking_sft_mixture(
         max_identity_ratio=max_identity_ratio,
         max_uncertainty_ratio=max_uncertainty_ratio,
         max_dominant_category_ratio=max_dominant_category_ratio,
+        max_refusal_ratio=max_refusal_ratio,
     )
+    refusal_count = sum(_looks_like_refusal(record.assistant) for _source, record in rows)
+    answerable_refusal_count = sum(
+        _is_answerable_record(source, record) and _looks_like_refusal(record.assistant)
+        for source, record in rows
+    )
+    language_leakage_count = sum(_contains_language_leakage(record) for _source, record in rows)
 
     output = Path(output_jsonl)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +160,11 @@ def build_thinking_sft_mixture(
         max_identity_ratio=max_identity_ratio,
         max_uncertainty_ratio=max_uncertainty_ratio,
         max_dominant_category_ratio=max_dominant_category_ratio,
+        max_refusal_ratio=max_refusal_ratio,
+        refusal_count=refusal_count,
+        refusal_ratio=refusal_count / len(rows) if rows else 0.0,
+        answerable_refusal_count=answerable_refusal_count,
+        language_leakage_count=language_leakage_count,
         safety_template_count=len(safety_templates),
         max_safety_per_template=max_safety_per_template,
         output_jsonl=str(output),
@@ -248,14 +268,24 @@ def _assess_mixture_quality(
     max_identity_ratio: float,
     max_uncertainty_ratio: float,
     max_dominant_category_ratio: float,
+    max_refusal_ratio: float = DEFAULT_MAX_REFUSAL_RATIO,
 ) -> tuple[bool, tuple[str, ...], dict[str, int]]:
     counts: dict[str, int] = {}
     mojibake_count = 0
+    refusal_count = 0
+    answerable_refusal_count = 0
+    language_leakage_count = 0
     for source, record in rows:
         category = _category_for_record(source, record)
         counts[category] = counts.get(category, 0) + 1
         if _contains_mojibake(record):
             mojibake_count += 1
+        if _looks_like_refusal(record.assistant):
+            refusal_count += 1
+            if _is_answerable_record(source, record):
+                answerable_refusal_count += 1
+        if _contains_language_leakage(record):
+            language_leakage_count += 1
     total = len(rows)
     findings: list[str] = []
     if total == 0:
@@ -265,6 +295,7 @@ def _assess_mixture_quality(
     safety_ratio = counts.get("safety", 0) / total
     identity_ratio = counts.get("identity", 0) / total
     uncertainty_ratio = counts.get("uncertainty", 0) / total
+    refusal_ratio = refusal_count / total
     if dominant_ratio > max_dominant_category_ratio:
         findings.append(f"dominant_category_ratio:{dominant_category}:{dominant_ratio:.3f}")
     if safety_ratio > max_safety_ratio:
@@ -273,6 +304,12 @@ def _assess_mixture_quality(
         findings.append(f"identity_ratio:{identity_ratio:.3f}")
     if uncertainty_ratio > max_uncertainty_ratio:
         findings.append(f"uncertainty_ratio:{uncertainty_ratio:.3f}")
+    if refusal_ratio > max_refusal_ratio:
+        findings.append(f"refusal_ratio:{refusal_ratio:.3f}")
+    if answerable_refusal_count:
+        findings.append(f"answerable_refusal:{answerable_refusal_count}")
+    if language_leakage_count:
+        findings.append(f"language_leakage:{language_leakage_count}")
     if total >= 20 and len(counts) < 3:
         findings.append(f"low_category_diversity:{len(counts)}")
     if mojibake_count:
@@ -316,3 +353,53 @@ def _category_for_record(source: str, record: ThinkingSftRecord) -> str:
 def _contains_mojibake(record: ThinkingSftRecord) -> bool:
     surface = f"{record.system}\n{record.user}\n{record.thinking}\n{record.assistant}"
     return any(marker in surface for marker in _MOJIBAKE_MARKERS)
+
+
+def _looks_like_refusal(assistant: str) -> bool:
+    folded = assistant.casefold()
+    markers = (
+        "bilmiyorum",
+        "bilemem",
+        "yardımcı olamam",
+        "yardimci olamam",
+        "yapamam",
+        "erişemem",
+        "erisemem",
+        "doğrulayamam",
+        "dogrulayamam",
+        "kesinleştiremem",
+        "kesinlestiremem",
+        "weiß ich nicht",
+        "weiss ich nicht",
+        "kann ich nicht",
+        "i don't know",
+        "i do not know",
+        "cannot verify",
+    )
+    return any(marker in folded for marker in markers)
+
+
+def _is_answerable_record(source: str, record: ThinkingSftRecord) -> bool:
+    if source == "safety":
+        return False
+    return _category_for_record(source, record) in {"reasoning_math", "prompt_following", "factual_anchor"}
+
+
+def _contains_language_leakage(record: ThinkingSftRecord) -> bool:
+    instruction = f" {record.system.casefold()} {record.user.casefold()} "
+    assistant = f" {' '.join(record.assistant.casefold().split())} "
+    expects_german = any(
+        marker in instruction
+        for marker in (" deutsch ", " almanca ", " antworte ", " was ist ", " wie ", " türkei ")
+    )
+    expects_turkish = any(
+        marker in instruction
+        for marker in (" türkçe ", " turkce ", " türkiye ", " turkiye ", " kaç ", " kac ", " başkent ", " baskent ")
+    )
+    if expects_german:
+        return any(marker in assistant for marker in (" bilmiyorum ", " yardımcı ", " yardimci ", " cevap ", " başkenti "))
+    if expects_turkish:
+        german_score = sum(marker in assistant for marker in (" ich ", " weiß ", " weiss ", " nicht ", " hauptstadt "))
+        english_score = sum(marker in assistant for marker in (" we can ", " threads ", " store more ", " the capital "))
+        return german_score >= 2 or english_score >= 1
+    return False

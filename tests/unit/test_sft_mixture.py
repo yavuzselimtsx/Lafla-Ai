@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from lafla_ai_core.post_training.sft_mixture import build_thinking_sft_mixture
+from lafla_ai_core.post_training.sft_mixture import _assess_mixture_quality, build_thinking_sft_mixture
+from lafla_ai_core.post_training.thinking_sft import ThinkingSftRecord
 
 
 def _write_records(path: Path, records: list[dict[str, str]]) -> None:
@@ -18,6 +19,55 @@ def _record(system: str, user: str, thinking: str, assistant: str) -> dict[str, 
 
 
 class SftMixtureTest(unittest.TestCase):
+    def test_mixture_quality_rejects_refusal_on_answerable_prompts(self):
+        rows = [
+            ("thinking", ThinkingSftRecord("Türkçe cevap ver.", f"2+2 kaç eder? Örnek {index}", "Topla.", "Bilmiyorum."))
+            for index in range(8)
+        ] + [
+            ("thinking", ThinkingSftRecord("Türkçe cevap ver.", f"2+2 kaç eder? Kontrol {index}", "Topla.", "4"))
+            for index in range(32)
+        ]
+
+        ok, findings, _counts = _assess_mixture_quality(
+            rows,
+            max_safety_ratio=0.10,
+            max_identity_ratio=0.18,
+            max_uncertainty_ratio=0.25,
+            max_dominant_category_ratio=1.0,
+        )
+
+        self.assertFalse(ok)
+        self.assertTrue(any(item.startswith("answerable_refusal") for item in findings))
+        self.assertTrue(any(item.startswith("refusal_ratio") for item in findings))
+
+    def test_mixture_quality_rejects_language_leakage(self):
+        rows = [
+            (
+                "thinking",
+                ThinkingSftRecord(
+                    "Türkçe cevap ver.",
+                    f"Türkiye'nin başkenti nedir? Örnek {index}",
+                    "Bilinen bilgiyi ver.",
+                    "Ich we can see that Ankara is the capital.",
+                ),
+            )
+            for index in range(5)
+        ] + [
+            ("thinking", ThinkingSftRecord("Türkçe cevap ver.", f"2+2 kaç eder? {index}", "Topla.", "4"))
+            for index in range(20)
+        ]
+
+        ok, findings, _counts = _assess_mixture_quality(
+            rows,
+            max_safety_ratio=0.10,
+            max_identity_ratio=0.18,
+            max_uncertainty_ratio=0.25,
+            max_dominant_category_ratio=1.0,
+        )
+
+        self.assertFalse(ok)
+        self.assertTrue(any(item.startswith("language_leakage") for item in findings))
+
     def test_build_mixture_limits_safety_ratio_and_keeps_many_chat_records(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
