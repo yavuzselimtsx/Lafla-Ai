@@ -114,6 +114,8 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertGreater(rtx.cuda_micro_batch_size_per_device, t4.cuda_micro_batch_size_per_device)
         self.assertLess(rtx_geometry.gradient_accumulation_steps, t4_geometry.gradient_accumulation_steps)
         self.assertGreaterEqual(rtx.gradient_checkpointing_min_sequence_length, 8192)
+        self.assertLess(rtx.checkpoint_every_tokens, t4.checkpoint_every_tokens)
+        self.assertGreater(rtx.keep_last_checkpoints, t4.keep_last_checkpoints)
 
     def test_training_config_rejects_invalid_distributed_policy(self):
         training = TrainingConfig.from_mapping(

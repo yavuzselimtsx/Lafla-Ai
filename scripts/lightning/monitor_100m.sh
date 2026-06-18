@@ -5,6 +5,7 @@ ROOT="${ROOT:-/teamspace/studios/this_studio}"
 WORK="${WORK:-$ROOT/LaflaAI100M}"
 REPORTS="$WORK/reports"
 CHECKPOINTS="$WORK/checkpoints"
+CHECKPOINT_BACKUPS="$WORK/checkpoint-backups"
 HEALTH_LOG="$REPORTS/train-health.jsonl"
 NOHUP_LOG="$REPORTS/lightning-t4-100m-nohup.log"
 
@@ -46,6 +47,13 @@ render_once() {
     ls -1 "$CHECKPOINTS" | tail -n 12
   else
     echo "checkpoint klasoru yok: $CHECKPOINTS"
+  fi
+  echo
+  echo "===== CHECKPOINT BACKUPS ====="
+  if [ -d "$CHECKPOINT_BACKUPS" ]; then
+    ls -1 "$CHECKPOINT_BACKUPS" | tail -n 12
+  else
+    echo "checkpoint backup klasoru yok: $CHECKPOINT_BACKUPS"
   fi
 }
 

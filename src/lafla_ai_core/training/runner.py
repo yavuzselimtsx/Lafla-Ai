@@ -32,7 +32,11 @@ from lafla_ai_core.data.packing import TokenizersCodec, iter_jsonl_texts, iter_p
 from lafla_ai_core.data.routing import assert_pretraining_inputs
 from lafla_ai_core.model.checkpoint_io import load_training_checkpoint, save_training_checkpoint
 from lafla_ai_core.model.transformer import LaflaDecoderModel
-from lafla_ai_core.training.checkpoint_policy import CheckpointPolicy, retention_victims, should_save_checkpoint
+from lafla_ai_core.training.checkpoint_policy import (
+    CheckpointPolicy,
+    apply_checkpoint_retention,
+    should_save_checkpoint,
+)
 from lafla_ai_core.training.curriculum import CurriculumStage, resolve_curriculum_stage, tokens_per_optimizer_step
 from lafla_ai_core.training.distributed import DistributedRuntime, initialize_distributed
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
@@ -700,20 +704,7 @@ def _probe_native_gqa(
 
 
 def _apply_retention(checkpoint_root: Path, keep_last: int) -> None:
-    steps: list[int] = []
-    for child in checkpoint_root.glob("lafla-step-*"):
-        if child.is_dir() and (child / "READY.json").exists():
-            try:
-                steps.append(int(child.name.rsplit("-", 1)[-1]))
-            except ValueError:
-                continue
-    for victim in retention_victims(steps, keep_last):
-        target = checkpoint_root / f"lafla-step-{victim:06d}"
-        resolved_root = checkpoint_root.resolve()
-        resolved_target = target.resolve()
-        if resolved_root not in resolved_target.parents:
-            raise RuntimeError(f"retention hedefi checkpoint disinda: {resolved_target}")
-        shutil.rmtree(resolved_target)
+    apply_checkpoint_retention(checkpoint_root, keep_last)
 
 
 def _save_distributed_checkpoint(

@@ -53,6 +53,8 @@ class LightningT4LauncherTest(unittest.TestCase):
         self.assertIn("train-health.jsonl", script)
         self.assertIn("lightning-t4-100m-nohup.log", script)
         self.assertIn("CHECKPOINTS", script)
+        self.assertIn("CHECKPOINT_BACKUPS", script)
+        self.assertIn("CHECKPOINT BACKUPS", script)
         self.assertIn("--watch", script)
 
     def test_rtx_pro_6000_launcher_selects_dedicated_quality_fast_profile(self):
