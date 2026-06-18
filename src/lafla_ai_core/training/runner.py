@@ -43,13 +43,14 @@ from lafla_ai_core.training.distributed import DistributedRuntime, initialize_di
 from lafla_ai_core.training.lr_schedule import cosine_with_warmup_lr
 from lafla_ai_core.training.optimizer_policy import resolve_adamw_fast_path
 from lafla_ai_core.training.parallelism import (
+    BatchGeometry,
     ParallelismDecision,
     gradient_sync_context,
     iter_rank_positions,
-    resolve_batch_geometry,
     resolve_data_parallel,
     resolve_gradient_checkpointing,
     resolve_parallelism,
+    resolve_stage_batch_geometry,
 )
 from lafla_ai_core.training.stability import StabilityMonitor
 
@@ -236,16 +237,6 @@ def _run_pretraining_impl(
     )
     base_model.set_native_gqa(native_gqa_enabled)
     parallel_decision = _resolve_parallelism(training_config, device, runtime)
-    batch_geometry = resolve_batch_geometry(
-        configured_micro_batch_size=training_config.micro_batch_size,
-        configured_gradient_accumulation_steps=training_config.gradient_accumulation_steps,
-        cuda_micro_batch_size_per_device=training_config.cuda_micro_batch_size_per_device,
-        target_sequences_per_optimizer_step=training_config.target_sequences_per_optimizer_step,
-        decision=parallel_decision,
-    )
-    active_process_micro_batch_size = batch_geometry.per_process_micro_batch_size
-    active_global_micro_batch_size = batch_geometry.global_micro_batch_size
-    active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
     optimizer = build_optimizer(base_model, training_config, device=device)
     optimizer_mode = str(getattr(optimizer, "_lafla_optimizer_mode", training_config.optimizer))
     start_step = 0
@@ -255,6 +246,11 @@ def _run_pretraining_impl(
         _move_optimizer_state(optimizer, device)
         start_step = int(state.get("step", 0))
         cumulative_tokens = int(state.get("cumulative_tokens", 0))
+    active_stage = resolve_curriculum_stage(training_config, cumulative_tokens)
+    batch_geometry = _resolve_active_batch_geometry(training_config, parallel_decision, active_stage)
+    active_process_micro_batch_size = batch_geometry.per_process_micro_batch_size
+    active_global_micro_batch_size = batch_geometry.global_micro_batch_size
+    active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
     train_model: torch.nn.Module = _TrainingLossModule(base_model)
     if parallel_decision.distributed:
         train_model = torch.nn.parallel.DistributedDataParallel(
@@ -266,7 +262,6 @@ def _run_pretraining_impl(
     elif parallel_decision.enabled:
         train_model = torch.nn.DataParallel(train_model)
 
-    active_stage = resolve_curriculum_stage(training_config, cumulative_tokens)
     active_gradient_checkpointing = resolve_gradient_checkpointing(
         model_checkpointing_enabled=model_config.gradient_checkpointing,
         minimum_sequence_length=training_config.gradient_checkpointing_min_sequence_length,
@@ -311,6 +306,7 @@ def _run_pretraining_impl(
                 "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
                 "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                 "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                "cuda_batch_scale": training_config.cuda_batch_scale,
                 "gradient_checkpointing": active_gradient_checkpointing,
                 "optimizer_mode": optimizer_mode,
                 "native_gqa": native_gqa_enabled,
@@ -326,6 +322,10 @@ def _run_pretraining_impl(
             stage = resolve_curriculum_stage(training_config, cumulative_tokens)
             if stage.index != active_stage.index:
                 active_stage = stage
+                batch_geometry = _resolve_active_batch_geometry(training_config, parallel_decision, active_stage)
+                active_process_micro_batch_size = batch_geometry.per_process_micro_batch_size
+                active_global_micro_batch_size = batch_geometry.global_micro_batch_size
+                active_gradient_accumulation_steps = batch_geometry.gradient_accumulation_steps
                 active_gradient_checkpointing = resolve_gradient_checkpointing(
                     model_checkpointing_enabled=model_config.gradient_checkpointing,
                     minimum_sequence_length=training_config.gradient_checkpointing_min_sequence_length,
@@ -359,6 +359,7 @@ def _run_pretraining_impl(
                             "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
                             "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                             "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                            "cuda_batch_scale": training_config.cuda_batch_scale,
                             "gradient_checkpointing": active_gradient_checkpointing,
                             "optimizer_mode": optimizer_mode,
                             "native_gqa": native_gqa_enabled,
@@ -447,6 +448,7 @@ def _run_pretraining_impl(
                         "configured_gradient_accumulation_steps": training_config.gradient_accumulation_steps,
                         "effective_gradient_accumulation_steps": active_gradient_accumulation_steps,
                         "sequences_per_optimizer_step": batch_geometry.sequences_per_optimizer_step,
+                        "cuda_batch_scale": training_config.cuda_batch_scale,
                         "gradient_checkpointing": active_gradient_checkpointing,
                         "optimizer_mode": optimizer_mode,
                         "native_gqa": native_gqa_enabled,
@@ -759,6 +761,24 @@ def _resolve_data_parallel(config: TrainingConfig, device: torch.device) -> Para
 
     cuda_device_count = torch.cuda.device_count() if device.type == "cuda" else 0
     return resolve_data_parallel(config.data_parallel, device.type, cuda_device_count)
+
+
+def _resolve_active_batch_geometry(
+    config: TrainingConfig,
+    decision: ParallelismDecision,
+    stage: CurriculumStage,
+) -> BatchGeometry:
+    """Resume veya curriculum gecisindeki etkin batch geometrisini cozer."""
+
+    return resolve_stage_batch_geometry(
+        configured_micro_batch_size=config.micro_batch_size,
+        configured_gradient_accumulation_steps=config.gradient_accumulation_steps,
+        cuda_micro_batch_size_per_device=config.cuda_micro_batch_size_per_device,
+        cuda_micro_batch_size_per_device_curriculum=config.cuda_micro_batch_size_per_device_curriculum,
+        target_sequences_per_optimizer_step=config.target_sequences_per_optimizer_step,
+        stage_index=stage.index,
+        decision=decision,
+    )
 
 
 def _resolve_parallelism(

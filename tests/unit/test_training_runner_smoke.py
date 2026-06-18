@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
@@ -71,6 +72,11 @@ class TrainingRunnerSmokeTest(unittest.TestCase):
             self.assertTrue((root / "checkpoints" / "lafla-final" / "READY.json").exists())
             self.assertTrue((root / "checkpoint-backups" / "lafla-final" / "READY.json").exists())
             self.assertTrue((root / "reports" / "health.jsonl").exists())
+            health_records = [
+                json.loads(line)
+                for line in (root / "reports" / "health.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertTrue(all(record["cuda_batch_scale"] == 1.0 for record in health_records))
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import TrainingConfig
@@ -6,6 +7,13 @@ from lafla_ai_core.training.curriculum import resolve_curriculum_stage, tokens_p
 
 
 class TrainingCurriculumTest(unittest.TestCase):
+    def test_runner_refreshes_stage_batch_geometry_and_logs_scale(self):
+        source = Path("src/lafla_ai_core/training/runner.py").read_text(encoding="utf-8")
+
+        self.assertIn("def _resolve_active_batch_geometry", source)
+        self.assertGreaterEqual(source.count("_resolve_active_batch_geometry("), 3)
+        self.assertIn('"cuda_batch_scale": training_config.cuda_batch_scale', source)
+
     def test_resolves_sequence_length_from_cumulative_token_boundaries(self):
         config = TrainingConfig.from_mapping(load_mapping("configs/training/colab/colab-tpu-v5e-100m.yaml"))
 
