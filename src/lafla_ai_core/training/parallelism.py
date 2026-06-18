@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ContextManager, Iterable, Iterator, TypeVar
+
+from lafla_ai_core.config.schema import TrainingConfig
 
 
 T = TypeVar("T")
@@ -159,6 +161,62 @@ def resolve_batch_geometry(
         global_micro_batch,
         accumulation,
         global_micro_batch * accumulation,
+    )
+
+
+def resolve_stage_batch_geometry(
+    *,
+    configured_micro_batch_size: int,
+    configured_gradient_accumulation_steps: int,
+    cuda_micro_batch_size_per_device: int,
+    cuda_micro_batch_size_per_device_curriculum: tuple[int, ...],
+    target_sequences_per_optimizer_step: int,
+    stage_index: int,
+    decision: ParallelismDecision,
+) -> BatchGeometry:
+    """Aktif curriculum asamasi icin CUDA batch geometrisini cozer."""
+
+    selected_micro_batch = cuda_micro_batch_size_per_device
+    if cuda_micro_batch_size_per_device_curriculum:
+        if not 0 <= stage_index < len(cuda_micro_batch_size_per_device_curriculum):
+            raise ValueError("curriculum stage batch programi disinda")
+        selected_micro_batch = cuda_micro_batch_size_per_device_curriculum[stage_index]
+    return resolve_batch_geometry(
+        configured_micro_batch_size=configured_micro_batch_size,
+        configured_gradient_accumulation_steps=configured_gradient_accumulation_steps,
+        cuda_micro_batch_size_per_device=selected_micro_batch,
+        target_sequences_per_optimizer_step=target_sequences_per_optimizer_step,
+        decision=decision,
+    )
+
+
+def scale_cuda_micro_batch_program(config: TrainingConfig, scale: float) -> TrainingConfig:
+    """CUDA micro-batch programini optimizer batch'ini koruyarak kucultur."""
+
+    if scale not in {1.0, 0.5, 0.25}:
+        raise ValueError("cuda batch scale yalniz 1.0, 0.5 veya 0.25 olabilir")
+    if scale != 1.0 and config.cuda_micro_batch_size_per_device <= 0:
+        raise ValueError("cuda batch scale etkin CUDA batch programi gerektirir")
+
+    target = config.target_sequences_per_optimizer_step
+
+    def scaled_divisor(value: int) -> int:
+        if value <= 0:
+            return value
+        candidate = max(1, int(value * scale))
+        while candidate > 1 and target % candidate != 0:
+            candidate -= 1
+        if target % candidate != 0:
+            raise ValueError("olceklenmis CUDA micro batch optimizer batch degerini bolmuyor")
+        return candidate
+
+    return replace(
+        config,
+        cuda_micro_batch_size_per_device=scaled_divisor(config.cuda_micro_batch_size_per_device),
+        cuda_micro_batch_size_per_device_curriculum=tuple(
+            scaled_divisor(value) for value in config.cuda_micro_batch_size_per_device_curriculum
+        ),
+        cuda_batch_scale=scale,
     )
 
 

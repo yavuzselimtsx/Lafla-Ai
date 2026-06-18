@@ -230,8 +230,10 @@ class TrainingConfig:
     prefer_fused_optimizer: bool = False
     prefer_native_gqa: bool = False
     cuda_micro_batch_size_per_device: int = 0
+    cuda_micro_batch_size_per_device_curriculum: tuple[int, ...] = ()
     target_sequences_per_optimizer_step: int = 0
     gradient_checkpointing_min_sequence_length: int = 0
+    cuda_batch_scale: float = 1.0
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any]) -> "TrainingConfig":
@@ -271,10 +273,15 @@ class TrainingConfig:
             prefer_fused_optimizer=bool(training.get("prefer_fused_optimizer", False)),
             prefer_native_gqa=bool(training.get("prefer_native_gqa", False)),
             cuda_micro_batch_size_per_device=int(training.get("cuda_micro_batch_size_per_device", 0)),
+            cuda_micro_batch_size_per_device_curriculum=_int_tuple(
+                training.get("cuda_micro_batch_size_per_device_curriculum", ()),
+                "cuda_micro_batch_size_per_device_curriculum",
+            ),
             target_sequences_per_optimizer_step=int(training.get("target_sequences_per_optimizer_step", 0)),
             gradient_checkpointing_min_sequence_length=int(
                 training.get("gradient_checkpointing_min_sequence_length", 0)
             ),
+            cuda_batch_scale=float(training.get("cuda_batch_scale", 1.0)),
         )
 
     def validate(self) -> None:
@@ -340,6 +347,28 @@ class TrainingConfig:
         _require(self.target_tokens >= 0, "target_tokens negatif olamaz")
         _require(self.checkpoint_every_tokens >= 0, "checkpoint_every_tokens negatif olamaz")
         _require(self.cuda_micro_batch_size_per_device >= 0, "cuda_micro_batch_size_per_device negatif olamaz")
+        if self.cuda_micro_batch_size_per_device_curriculum:
+            _require(bool(self.sequence_curriculum), "cuda micro batch curriculum sequence curriculum gerektirir")
+            _require(
+                len(self.cuda_micro_batch_size_per_device_curriculum) == len(self.sequence_curriculum),
+                "cuda micro batch curriculum ve sequence curriculum ayni uzunlukta olmali",
+            )
+            _require(
+                all(value > 0 for value in self.cuda_micro_batch_size_per_device_curriculum),
+                "cuda micro batch curriculum degerleri pozitif olmali",
+            )
+            _require(
+                self.cuda_micro_batch_size_per_device_curriculum[0]
+                == self.cuda_micro_batch_size_per_device,
+                "cuda micro batch curriculum ilk degeri sabit CUDA micro batch ile ayni olmali",
+            )
+            _require(
+                all(
+                    self.target_sequences_per_optimizer_step % value == 0
+                    for value in self.cuda_micro_batch_size_per_device_curriculum
+                ),
+                "cuda micro batch curriculum optimizer batch degerini tam bolmeli",
+            )
         _require(
             self.target_sequences_per_optimizer_step >= 0,
             "target_sequences_per_optimizer_step negatif olamaz",
@@ -352,6 +381,7 @@ class TrainingConfig:
             self.gradient_checkpointing_min_sequence_length >= 0,
             "gradient_checkpointing_min_sequence_length negatif olamaz",
         )
+        _require(0.0 < self.cuda_batch_scale <= 1.0, "cuda_batch_scale (0, 1] araliginda olmali")
 
 
 @dataclass(frozen=True)

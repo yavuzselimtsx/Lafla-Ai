@@ -20,6 +20,7 @@ from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import ModelConfig, TrainingConfig
 from lafla_ai_core.data.routing import assert_pretraining_inputs
 from lafla_ai_core.training.distributed import read_distributed_environment
+from lafla_ai_core.training.parallelism import scale_cuda_micro_batch_program
 from lafla_ai_core.training.runner import TrainingPaths, run_pretraining
 
 
@@ -32,12 +33,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--health-log", required=True)
     parser.add_argument("--resume-from")
     parser.add_argument("--data-jsonl", action="append", default=[])
+    parser.add_argument("--cuda-batch-scale", type=float, default=1.0)
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args(argv)
 
     model_config = ModelConfig.from_mapping(load_mapping(args.model_config))
     training_config = TrainingConfig.from_mapping(load_mapping(args.training_config))
     model_config.validate()
+    training_config.validate()
+    training_config = scale_cuda_micro_batch_program(training_config, args.cuda_batch_scale)
     training_config.validate()
     if not args.smoke:
         _require_existing(args.tokenizer_path, "tokenizer")

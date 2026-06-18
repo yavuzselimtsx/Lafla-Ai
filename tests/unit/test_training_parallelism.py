@@ -12,6 +12,8 @@ from lafla_ai_core.training.parallelism import (
     gradient_sync_context,
     iter_rank_positions,
     resolve_batch_geometry,
+    resolve_stage_batch_geometry,
+    scale_cuda_micro_batch_program,
     resolve_gradient_checkpointing,
     resolve_parallelism,
     should_sync_gradients,
@@ -73,6 +75,36 @@ def _model_config():
 
 
 class TrainingParallelismConfigTest(unittest.TestCase):
+    def test_stage_batch_geometry_uses_curriculum_micro_batch(self):
+        decision = ParallelismDecision(False, "single_device", 1, "test")
+
+        geometry = resolve_stage_batch_geometry(
+            configured_micro_batch_size=1,
+            configured_gradient_accumulation_steps=16,
+            cuda_micro_batch_size_per_device=32,
+            cuda_micro_batch_size_per_device_curriculum=(32, 16, 8, 4, 2, 1),
+            target_sequences_per_optimizer_step=32,
+            stage_index=3,
+            decision=decision,
+        )
+
+        self.assertEqual(geometry.per_process_micro_batch_size, 4)
+        self.assertEqual(geometry.gradient_accumulation_steps, 8)
+        self.assertEqual(geometry.sequences_per_optimizer_step, 32)
+
+    def test_half_cuda_batch_scale_preserves_optimizer_batch(self):
+        config = _training_config(
+            cuda_micro_batch_size_per_device=32,
+            cuda_micro_batch_size_per_device_curriculum=(32, 16, 8, 4, 2, 1),
+            target_sequences_per_optimizer_step=32,
+        )
+
+        scaled = scale_cuda_micro_batch_program(config, 0.5)
+
+        self.assertEqual(scaled.cuda_micro_batch_size_per_device, 16)
+        self.assertEqual(scaled.cuda_micro_batch_size_per_device_curriculum, (16, 8, 4, 2, 1, 1))
+        self.assertEqual(scaled.cuda_batch_scale, 0.5)
+
     def test_training_config_accepts_data_parallel_auto(self):
         config = TrainingConfig.from_mapping(
             {

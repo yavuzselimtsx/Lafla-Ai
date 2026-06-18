@@ -140,6 +140,64 @@ class ConfigPreflightTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "distributed_backend"):
             training.validate()
 
+    def test_training_config_parses_curriculum_cuda_batch_program(self):
+        training = TrainingConfig.from_mapping(
+            {
+                "training": {
+                    "max_steps": 10,
+                    "sequence_length": 2048,
+                    "sequence_curriculum": [2048, 4096],
+                    "curriculum_token_boundaries": [0, 1000],
+                    "target_tokens": 2000,
+                    "micro_batch_size": 1,
+                    "gradient_accumulation_steps": 16,
+                    "cuda_micro_batch_size_per_device": 32,
+                    "cuda_micro_batch_size_per_device_curriculum": [32, 16],
+                    "target_sequences_per_optimizer_step": 32,
+                    "precision": "bf16",
+                    "optimizer": "adamw",
+                    "learning_rate": 0.001,
+                    "warmup_steps": 1,
+                    "save_every": 5,
+                    "keep_last_checkpoints": 1,
+                    "require_drive_or_explicit_local_fallback": False,
+                }
+            }
+        )
+
+        training.validate()
+
+        self.assertEqual(training.cuda_micro_batch_size_per_device_curriculum, (32, 16))
+        self.assertEqual(training.cuda_batch_scale, 1.0)
+
+    def test_training_config_rejects_cuda_batch_program_with_wrong_stage_count(self):
+        training = TrainingConfig.from_mapping(
+            {
+                "training": {
+                    "max_steps": 10,
+                    "sequence_length": 2048,
+                    "sequence_curriculum": [2048, 4096],
+                    "curriculum_token_boundaries": [0, 1000],
+                    "target_tokens": 2000,
+                    "micro_batch_size": 1,
+                    "gradient_accumulation_steps": 16,
+                    "cuda_micro_batch_size_per_device": 32,
+                    "cuda_micro_batch_size_per_device_curriculum": [32],
+                    "target_sequences_per_optimizer_step": 32,
+                    "precision": "bf16",
+                    "optimizer": "adamw",
+                    "learning_rate": 0.001,
+                    "warmup_steps": 1,
+                    "save_every": 5,
+                    "keep_last_checkpoints": 1,
+                    "require_drive_or_explicit_local_fallback": False,
+                }
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "cuda micro batch curriculum"):
+            training.validate()
+
     def test_model_config_loads_and_validates(self):
         path = Path("configs/model/lafla-400m-thinking.yaml")
         config = ModelConfig.from_mapping(load_mapping(path))
