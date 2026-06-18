@@ -37,6 +37,24 @@ class LightningT4LauncherTest(unittest.TestCase):
         self.assertLess(script.index("data_audit"), script.index("validate_pretraining_data"))
         self.assertLess(script.index("validate_pretraining_data"), script.index("train_pretrain"))
 
+    def test_t4_background_launcher_keeps_user_terminal_free(self):
+        script = Path("scripts/lightning/start_t4_100m_background.sh").read_text(encoding="utf-8")
+
+        self.assertIn("nohup bash scripts/lightning/start_t4_100m.sh", script)
+        self.assertIn("lightning-t4-100m.pid", script)
+        self.assertIn("lightning-t4-100m-nohup.log", script)
+        self.assertIn("pgrep -af \"lafla_ai_core.cli.train_pretrain\"", script)
+        self.assertIn("monitor_100m.sh --watch 10", script)
+
+    def test_t4_monitor_reports_process_gpu_logs_and_checkpoints(self):
+        script = Path("scripts/lightning/monitor_100m.sh").read_text(encoding="utf-8")
+
+        self.assertIn("nvidia-smi --query-gpu", script)
+        self.assertIn("train-health.jsonl", script)
+        self.assertIn("lightning-t4-100m-nohup.log", script)
+        self.assertIn("CHECKPOINTS", script)
+        self.assertIn("--watch", script)
+
 
 if __name__ == "__main__":
     unittest.main()
