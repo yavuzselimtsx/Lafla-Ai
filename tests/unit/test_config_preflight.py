@@ -5,7 +5,7 @@ from pathlib import Path
 from lafla_ai_core.cli.preflight import run_preflight
 from lafla_ai_core.config.loader import load_mapping
 from lafla_ai_core.config.schema import ModelConfig, PostTrainingConfig, RuntimeConfig, TokenizerConfig, TrainingConfig
-from lafla_ai_core.training.parallelism import ParallelismDecision, resolve_batch_geometry
+from lafla_ai_core.training.parallelism import ParallelismDecision, resolve_batch_geometry, resolve_stage_batch_geometry
 
 
 class ConfigPreflightTest(unittest.TestCase):
@@ -116,6 +116,48 @@ class ConfigPreflightTest(unittest.TestCase):
         self.assertGreaterEqual(rtx.gradient_checkpointing_min_sequence_length, 8192)
         self.assertLess(rtx.checkpoint_every_tokens, t4.checkpoint_every_tokens)
         self.assertGreater(rtx.keep_last_checkpoints, t4.keep_last_checkpoints)
+
+    def test_lightning_h100_profile_preserves_quality_and_uses_stage_batch_program(self):
+        stable = TrainingConfig.from_mapping(
+            load_mapping("configs/training/lightning/lightning-rtx-pro-6000-100m-quality-fast.yaml")
+        )
+        h100 = TrainingConfig.from_mapping(
+            load_mapping("configs/training/lightning/lightning-h100-100m-quality-fast.yaml")
+        )
+
+        h100.validate()
+
+        self.assertEqual(h100.target_tokens, stable.target_tokens)
+        self.assertEqual(h100.learning_rate, stable.learning_rate)
+        self.assertEqual(h100.min_learning_rate, stable.min_learning_rate)
+        self.assertEqual(h100.warmup_steps, stable.warmup_steps)
+        self.assertEqual(h100.precision, "bf16")
+        self.assertTrue(h100.prefer_fused_optimizer)
+        self.assertEqual(h100.target_sequences_per_optimizer_step, 32)
+        self.assertEqual(
+            h100.cuda_micro_batch_size_per_device_curriculum,
+            (32, 16, 8, 4, 2, 1),
+        )
+        self.assertEqual(h100.checkpoint_every_tokens, 10_000_000)
+        self.assertEqual(h100.keep_last_checkpoints, 8)
+        self.assertGreaterEqual(h100.checkpoint_min_free_gb, 20.0)
+        decision = ParallelismDecision(False, "single_device", 1, "test")
+        geometries = [
+            resolve_stage_batch_geometry(
+                configured_micro_batch_size=h100.micro_batch_size,
+                configured_gradient_accumulation_steps=h100.gradient_accumulation_steps,
+                cuda_micro_batch_size_per_device=h100.cuda_micro_batch_size_per_device,
+                cuda_micro_batch_size_per_device_curriculum=h100.cuda_micro_batch_size_per_device_curriculum,
+                target_sequences_per_optimizer_step=h100.target_sequences_per_optimizer_step,
+                stage_index=index,
+                decision=decision,
+            )
+            for index in range(6)
+        ]
+        self.assertEqual(
+            [(item.per_process_micro_batch_size, item.gradient_accumulation_steps) for item in geometries],
+            [(32, 1), (16, 2), (8, 4), (4, 8), (2, 16), (1, 32)],
+        )
 
     def test_training_config_rejects_invalid_distributed_policy(self):
         training = TrainingConfig.from_mapping(

@@ -1,0 +1,53 @@
+# Lightning H100 80GB profile for LaflaGPT Mini 100M pretraining.
+# Optimizer batch remains 32 sequences at every context curriculum stage.
+training:
+  accelerator: cuda
+  data_parallel: auto
+  distributed_backend: auto
+  gradient_sync: final_microstep
+  pin_memory: true
+  prefer_fused_optimizer: true
+  prefer_native_gqa: true
+  max_steps: 250000
+  sequence_length: 2048
+  sequence_curriculum:
+    - 2048
+    - 4096
+    - 8192
+    - 12288
+    - 16384
+    - 20480
+  curriculum_token_boundaries:
+    - 0
+    - 3600000000
+    - 4800000000
+    - 5400000000
+    - 5700000000
+    - 5900000000
+  target_tokens: 6000000000
+  checkpoint_every_tokens: 10000000
+  micro_batch_size: 1
+  gradient_accumulation_steps: 16
+  cuda_micro_batch_size_per_device: 32
+  cuda_micro_batch_size_per_device_curriculum:
+    - 32
+    - 16
+    - 8
+    - 4
+    - 2
+    - 1
+  target_sequences_per_optimizer_step: 32
+  gradient_checkpointing_min_sequence_length: 8192
+  precision: bf16
+  optimizer: adamw
+  learning_rate: 0.00024
+  min_learning_rate: 0.000024
+  weight_decay: 0.1
+  grad_clip_norm: 1.0
+  warmup_steps: 2000
+  save_every: 500
+  keep_last_checkpoints: 8
+  checkpoint_min_free_gb: 20.0
+  log_every: 10
+  seed: 1337
+  require_drive_or_explicit_local_fallback: true
