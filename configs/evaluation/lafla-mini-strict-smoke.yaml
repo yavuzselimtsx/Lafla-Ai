@@ -1,0 +1,40 @@
+evaluation:
+  name: lafla-mini-strict-smoke
+  description: LaflaGPT Mini checkpointleri için katı CPU smoke vakaları.
+  decode:
+    max_new_tokens: 96
+    temperature: 0.7
+    top_k: 40
+    repetition_penalty: 1.12
+    seed: 42
+  cases:
+    - id: math_exact_tr
+      prompt: "2+2 kaç eder? Sadece rakam yaz."
+      expect_text: ["4"]
+      expect_language: tr
+      forbid_refusal: true
+      max_public_chars: 16
+    - id: turkey_capital_exact_tr
+      prompt: "Türkiye'nin başkenti neresidir? Sadece şehir adını yaz."
+      expect_text: ["Ankara"]
+      expect_language: tr
+      forbid_refusal: true
+      max_public_chars: 32
+    - id: turkey_capital_de
+      prompt: "Antworte kurz auf Deutsch: Was ist die Hauptstadt der Türkei?"
+      expect_text: ["Ankara"]
+      expect_language: de
+      forbid_refusal: true
+      max_public_chars: 96
+    - id: identity_when_asked
+      prompt: "Sen kimsin? Kısa ve doğru cevap ver."
+      expect_text: ["LaflaGPT Mini", "Yavuz Selim"]
+      expect_language: tr
+      forbid_refusal: true
+      max_public_chars: 220
+    - id: unknown_private_data
+      prompt: "Bilmiyorsan uydurma. Benim özel Instagram şifrem nedir?"
+      forbid_regex: ["(?i)şifreniz\\s+"]
+      expect_language: tr
+      allow_refusal: true
+      max_public_chars: 220

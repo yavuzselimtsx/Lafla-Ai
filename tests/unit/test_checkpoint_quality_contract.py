@@ -99,6 +99,68 @@ class CheckpointQualityContractTest(unittest.TestCase):
         self.assertTrue(assessment.ok)
         self.assertEqual(assessment.blocking_warnings, ())
 
+    def test_answerable_prompt_blocks_unexpected_refusal(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Bilmiyorum. Güvenilir bir kaynak olmadan uydurmam.",
+            (),
+            prompt_text="2+2 kaç eder? Sadece rakam yaz.",
+            expected_texts=("4",),
+            forbid_refusal=True,
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertIn("unexpected_refusal", assessment.blocking_warnings)
+        self.assertIn("expected_answer_missing", assessment.blocking_warnings)
+
+    def test_turkish_prompt_blocks_obvious_language_leakage(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Ich we can see that we store more than one threads.",
+            (),
+            prompt_text="Türkiye'nin başkenti neresidir? Sadece şehir adını yaz.",
+            expected_texts=("Ankara",),
+            expected_language="tr",
+            forbid_refusal=True,
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertIn("language_mismatch", assessment.blocking_warnings)
+
+    def test_required_literal_text_accepts_semantic_answer(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Ankara",
+            (),
+            prompt_text="Türkiye'nin başkenti neresidir? Sadece şehir adını yaz.",
+            expected_texts=("Ankara",),
+            expected_language="tr",
+            forbid_refusal=True,
+            max_public_chars=16,
+        )
+
+        self.assertTrue(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ())
+
+    def test_forbidden_regex_blocks_wrong_language_phrase(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Ankara. Ich weiss es nicht.",
+            (),
+            forbidden_patterns=(r"\bIch\b",),
+            expected_texts=("Ankara",),
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("forbidden_pattern_present",))
+
+    def test_max_public_chars_blocks_exact_answer_digression(self):
+        assessment = assess_checkpoint_generation_quality(
+            "Ankara Türkiye'nin başkentidir ve uzun açıklama gereksizdir.",
+            (),
+            expected_texts=("Ankara",),
+            max_public_chars=16,
+        )
+
+        self.assertFalse(assessment.ok)
+        self.assertEqual(assessment.blocking_warnings, ("answer_too_long",))
+
     def test_turkish_sentence_answer_is_quality_ok(self):
         assessment = assess_checkpoint_generation_quality("Merhaba, nasıl yardımcı olabilirim?", ())
 
@@ -320,6 +382,38 @@ class CheckpointQualityContractTest(unittest.TestCase):
             generate.call_args.kwargs["expected_patterns"],
             ("LaflaGPT Mini", r"2\s*\+\s*2\s*=\s*4"),
         )
+
+    def test_checkpoint_cli_passes_strict_semantic_flags(self):
+        fake = FakeCliResult("Ankara", (), True, ())
+        stdout = io.StringIO()
+
+        with patch("lafla_ai_core.cli.test_checkpoint.generate_from_checkpoint", return_value=fake) as generate:
+            with contextlib.redirect_stdout(stdout):
+                exit_code = checkpoint_cli_main(
+                    [
+                        "--checkpoint-dir",
+                        "ckpt",
+                        "--tokenizer-path",
+                        "tokenizer.json",
+                        "--expect-text",
+                        "Ankara",
+                        "--forbid-regex",
+                        r"\bIch\b",
+                        "--expect-language",
+                        "tr",
+                        "--forbid-refusal",
+                        "--max-public-chars",
+                        "16",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(generate.call_args.kwargs["expected_texts"], ("Ankara",))
+        self.assertEqual(generate.call_args.kwargs["forbidden_patterns"], (r"\bIch\b",))
+        self.assertEqual(generate.call_args.kwargs["expected_language"], "tr")
+        self.assertTrue(generate.call_args.kwargs["forbid_refusal"])
+        self.assertFalse(generate.call_args.kwargs["allow_refusal"])
+        self.assertEqual(generate.call_args.kwargs["max_public_chars"], 16)
 
     def test_checkpoint_cli_passes_sampling_controls(self):
         fake = FakeCliResult("cevap", (), True, ())

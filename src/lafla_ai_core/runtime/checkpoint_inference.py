@@ -40,6 +40,10 @@ BLOCKING_CHECKPOINT_WARNINGS = (
     "safety_filters_disabled",
     "smoke_answer_drift",
     "expected_answer_missing",
+    "forbidden_pattern_present",
+    "unexpected_refusal",
+    "language_mismatch",
+    "answer_too_long",
     "unclosed_thinking_block",
 )
 
@@ -123,19 +127,45 @@ def assess_checkpoint_generation_quality(
     *,
     prompt_text: str | None = None,
     expected_patterns: Sequence[str] = (),
+    expected_texts: Sequence[str] = (),
+    forbidden_patterns: Sequence[str] = (),
+    expected_language: str | None = None,
+    forbid_refusal: bool = False,
+    allow_refusal: bool = False,
+    max_public_chars: int | None = None,
 ) -> CheckpointQualityAssessment:
     """Checkpoint smoke generation sonucunu fail-closed kalite kararina cevirir."""
 
+    if allow_refusal and forbid_refusal:
+        raise ValueError("allow_refusal ve forbid_refusal birlikte kullanilamaz")
+    if max_public_chars is not None and max_public_chars < 1:
+        raise ValueError("max_public_chars pozitif olmali")
+
     blocking: list[str] = []
+
+    def block(warning: str) -> None:
+        if warning not in blocking:
+            blocking.append(warning)
+
     for warning in warnings:
-        if warning in BLOCKING_CHECKPOINT_WARNINGS and warning not in blocking:
-            blocking.append(str(warning))
+        if warning in BLOCKING_CHECKPOINT_WARNINGS:
+            block(str(warning))
     if not public_text.strip() and "empty_after_output_guard" not in blocking:
-        blocking.append("empty_public_text")
+        block("empty_public_text")
     if _is_short_math_smoke_prompt(prompt_text) and _short_math_smoke_drifted(public_text):
-        blocking.append("smoke_answer_drift")
+        block("smoke_answer_drift")
     if expected_patterns and not _matches_all_expected_patterns(public_text, expected_patterns):
-        blocking.append("expected_answer_missing")
+        block("expected_answer_missing")
+    if expected_texts and not _contains_all_expected_texts(public_text, expected_texts):
+        block("expected_answer_missing")
+    if forbidden_patterns and _matches_any_forbidden_pattern(public_text, forbidden_patterns):
+        block("forbidden_pattern_present")
+    if forbid_refusal and _looks_like_refusal(public_text):
+        block("unexpected_refusal")
+    if _language_mismatch(public_text, expected_language):
+        block("language_mismatch")
+    if max_public_chars is not None and len(public_text.strip()) > max_public_chars:
+        block("answer_too_long")
     if blocking:
         return CheckpointQualityAssessment(False, tuple(blocking), f"blocking_warnings:{','.join(blocking)}")
     return CheckpointQualityAssessment(True, (), "ok")
@@ -168,6 +198,64 @@ def _matches_all_expected_patterns(public_text: str, expected_patterns: Sequence
     return True
 
 
+def _contains_all_expected_texts(public_text: str, expected_texts: Sequence[str]) -> bool:
+    folded = public_text.casefold()
+    return all(text.strip() and text.casefold() in folded for text in expected_texts)
+
+
+def _matches_any_forbidden_pattern(public_text: str, forbidden_patterns: Sequence[str]) -> bool:
+    for pattern in forbidden_patterns:
+        try:
+            if re.search(pattern, public_text, flags=re.IGNORECASE) is not None:
+                return True
+        except re.error as exc:
+            raise ValueError(f"gecersiz forbidden regex: {pattern}") from exc
+    return False
+
+
+def _looks_like_refusal(public_text: str) -> bool:
+    folded = public_text.casefold()
+    markers = (
+        "bilmiyorum",
+        "emin değilim",
+        "emin degilim",
+        "uydurmam",
+        "doğrulayamam",
+        "dogrulayamam",
+        "kaynak olmadan",
+        "ich weiß es nicht",
+        "ich weiss es nicht",
+        "nicht sicher",
+        "ohne verlässliche quelle",
+        "ohne verlaessliche quelle",
+        "i don't know",
+        "i do not know",
+        "cannot verify",
+    )
+    return any(marker in folded for marker in markers)
+
+
+def _language_mismatch(public_text: str, expected_language: str | None) -> bool:
+    if expected_language is None:
+        return False
+    expected = expected_language.casefold()
+    if expected not in {"tr", "de", "en"}:
+        raise ValueError("expected_language tr, de veya en olmali")
+
+    folded = f" {' '.join(public_text.casefold().split())} "
+    marker_groups = {
+        "tr": (" bilmiyorum ", " başkenti ", " baskenti ", " kısa ", " kisa ", " değildir ", " degildir "),
+        "de": (" ich ", " weiß ", " weiss ", " nicht ", " hauptstadt ", " türkei ", " ist "),
+        "en": (" i don't ", " i do not ", " we can ", " threads ", " store more ", " capital ", " is "),
+    }
+    scores = {
+        language: sum(marker in folded for marker in markers)
+        for language, markers in marker_groups.items()
+    }
+    foreign_score = max(score for language, score in scores.items() if language != expected)
+    return foreign_score >= 2 and foreign_score > scores[expected]
+
+
 def generate_from_checkpoint(
     *,
     checkpoint_dir: str | Path,
@@ -178,6 +266,12 @@ def generate_from_checkpoint(
     device: str | None = None,
     runtime_config: RuntimeConfig | None = None,
     expected_patterns: Sequence[str] = (),
+    expected_texts: Sequence[str] = (),
+    forbidden_patterns: Sequence[str] = (),
+    expected_language: str | None = None,
+    forbid_refusal: bool = False,
+    allow_refusal: bool = False,
+    max_public_chars: int | None = None,
     temperature: float = 0.0,
     top_k: int = 0,
     repetition_penalty: float = 1.0,
@@ -253,6 +347,23 @@ def generate_from_checkpoint(
         guarded.warnings,
         prompt_text=user_text,
         expected_patterns=expected_patterns,
+        expected_texts=expected_texts,
+        forbidden_patterns=forbidden_patterns,
+        expected_language=expected_language,
+        forbid_refusal=forbid_refusal,
+        allow_refusal=allow_refusal,
+        max_public_chars=max_public_chars,
+    )
+    has_semantic_expectation = any(
+        (
+            expected_patterns,
+            expected_texts,
+            forbidden_patterns,
+            expected_language,
+            forbid_refusal,
+            allow_refusal,
+            max_public_chars,
+        )
     )
     return CheckpointGenerationResult(
         checkpoint_dir=str(checkpoint),
@@ -264,7 +375,7 @@ def generate_from_checkpoint(
         quality_ok=quality.ok,
         blocking_warnings=quality.blocking_warnings,
         raw_thinking=raw_thinking,
-        quality_scope="semantic" if expected_patterns else "structural",
+        quality_scope="semantic" if has_semantic_expectation else "structural",
         decode_temperature=temperature,
         decode_top_k=top_k,
         decode_repetition_penalty=repetition_penalty,

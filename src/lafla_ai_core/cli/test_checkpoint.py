@@ -25,6 +25,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device")
     parser.add_argument("--runtime-config")
     parser.add_argument("--expect-regex", action="append", default=[])
+    parser.add_argument("--expect-text", action="append", default=[])
+    parser.add_argument("--forbid-regex", action="append", default=[])
+    parser.add_argument("--expect-language", choices=("tr", "de", "en"))
+    refusal_group = parser.add_mutually_exclusive_group()
+    refusal_group.add_argument("--forbid-refusal", action="store_true")
+    refusal_group.add_argument("--allow-refusal", action="store_true")
+    parser.add_argument("--max-public-chars", type=int)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=40)
     parser.add_argument("--repetition-penalty", type=float, default=1.08)
@@ -42,6 +49,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         device=args.device,
         runtime_config=runtime_config,
         expected_patterns=tuple(args.expect_regex),
+        expected_texts=tuple(args.expect_text),
+        forbidden_patterns=tuple(args.forbid_regex),
+        expected_language=args.expect_language,
+        forbid_refusal=bool(args.forbid_refusal),
+        allow_refusal=bool(args.allow_refusal),
+        max_public_chars=args.max_public_chars,
         temperature=args.temperature,
         top_k=args.top_k,
         repetition_penalty=args.repetition_penalty,
